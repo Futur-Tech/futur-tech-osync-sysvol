@@ -133,9 +133,12 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf INITIATOR_SYNC_DIR "\"/var/lib/samba/sysvol\""
     custom_conf TARGET_SYNC_DIR "\"ssh://${app_user}@${other_dc_fqdn}:22//var/lib/samba/sysvol\""
     custom_conf SSH_RSA_PRIVATE_KEY "\"/home/${app_user}/.ssh/id_rsa\""
+    custom_conf SSH_IGNORE_KNOWN_HOSTS "true"
+    custom_conf REMOTE_HOST_PING "true"
     custom_conf REMOTE_3RD_PARTY_HOSTS "\"\""
     custom_conf PRESERVE_ACL "true"
     custom_conf PRESERVE_XATTR "true"
+    custom_conf CHECKSUM "true"
     custom_conf RSYNC_COMPRESS "false"
     custom_conf REMOTE_RUN_AFTER_CMD "\"/usr/bin/samba-tool ntacl sysvolreset\""
     custom_conf LOGFILE "\"/var/log/${app_name}.log\""
@@ -147,6 +150,7 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf SYNC_TYPE "\"\""
     custom_conf SMTP_USER "\"\""
     custom_conf SMTP_PASSWORD "\"\""
+
 
 
 
