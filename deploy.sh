@@ -80,6 +80,16 @@ echo "
 
 if [ "$is_dc_master" = true ] ; then
     $S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
+
+    # Test SSH Connection
+    ssh -q ${app_user}@${other_dc_fqdn} exit
+    if [ $? -ne 0 ] ; then
+        $S_LOG -s crit -d $S_NAME "ssh ${app_user}@${other_dc_fqdn} failed" ; exit
+    else
+        $S_LOG -s crit -d $S_NAME "ssh ${app_user}@${other_dc_fqdn} failed" ; exit
+    fi
+
+
 else
     $S_DIR_PATH/ft-util/ft_util_sshauth ${app_user} # Setup of authorized_keys
 fi
