@@ -86,7 +86,7 @@ if [ "$is_dc_master" = true ] ; then
     if [ $? -ne 0 ] ; then
         echo "ssh connection to ${app_user}@${other_dc_fqdn} failed
         1 - Deploy the repo to ${other_dc_fqdn}
-        2 - Run the command:
+        2 - Run the followinf command on ${other_dc_fqdn}:
         echo \"$(cat /home/${app_user}/.ssh/id_rsa.pub)\" > /home/${app_user}/.ssh/authorized_keys.d/${app_name}
         3 - Deploy again the repo to ${other_dc_fqdn}
         4 - Deplay again the repo on $(hostname)
