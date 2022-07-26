@@ -70,16 +70,19 @@ $S_DIR_PATH/ft-util/ft_util_pkg -u -i ${required_pkg_arr[@]} || exit 1
 echo "
     SETUP USER/GROUP
 ------------------------------------------"
-if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; fi
-if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; fi
+if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -s $? -d $S_NAME "Group \"${app_user}\" exist" ; fi
+if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -s $? -d $S_NAME "Group \"${app_user}\" exist" ; fi
 
 
 echo "
     SETUP SSH KEYS
 ------------------------------------------"
-$S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
-$S_DIR_PATH/ft-util/ft_util_sshauth ${app_user} # Setup of authorized_keys
 
+if [ "$is_dc_master" = true ] ; then
+    $S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
+else
+    $S_DIR_PATH/ft-util/ft_util_sshauth ${app_user} # Setup of authorized_keys
+fi
 
 echo "
     SETUP SUDOER FILES
