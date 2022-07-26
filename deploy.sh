@@ -124,7 +124,7 @@ if [ "$is_dc_master" = true ] ; then
     function custom_conf () {
         if grep "^${1}=" ${etc_file} ; then 
             sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|" ${etc_file}
-            $S_LOG -s $? -d $S_NAME -d "custom_conf" "${1}=${2} returned EXIT_CODE=$?"
+            $S_LOG -s ${?/0/debug} -d $S_NAME -d "custom_conf" "${1}=${2} returned EXIT_CODE=$?"
         else
            $S_LOG -s crit -d $S_NAME -d "custom_conf" "Couldn't find ${1} in ${etc_file}"
         fi
