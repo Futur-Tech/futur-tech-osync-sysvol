@@ -78,9 +78,9 @@ echo "
     SETUP SSH KEYS
 ------------------------------------------"
 
-if [ "$is_dc_master" = true ] ; then
-    $S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
+$S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
 
+if [ "$is_dc_master" = true ] ; then
     # Test SSH Connection
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PasswordAuthentication=no -i /home/${app_user}/.ssh/id_rsa -q ${app_user}@${other_dc_fqdn} exit
     if [ $? -ne 0 ] ; then
