@@ -70,8 +70,8 @@ $S_DIR_PATH/ft-util/ft_util_pkg -u -i ${required_pkg_arr[@]} || exit 1
 echo "
     SETUP USER/GROUP
 ------------------------------------------"
-if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -s $? -d $S_NAME "Group \"${app_user}\" exist" ; fi
-if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -s $? -d $S_NAME "Group \"${app_user}\" exist" ; fi
+if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "Group \"${app_user}\" exist" ; fi
+if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "Group \"${app_user}\" exist" ; fi
 
 
 echo "
