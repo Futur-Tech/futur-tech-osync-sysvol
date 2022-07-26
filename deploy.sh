@@ -70,8 +70,8 @@ $S_DIR_PATH/ft-util/ft_util_pkg -u -i ${required_pkg_arr[@]} || exit 1
 echo "
     SETUP USER/GROUP
 ------------------------------------------"
-if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "Group \"${app_user}\" exist" ; fi
-if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "Group \"${app_user}\" exist" ; fi
+if [ ! $(getent group ${app_user}) ] ; then groupadd ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating group \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "Group \"${app_user}\" exists" ; fi
+if [ ! $(getent passwd ${app_user}) ] ; then useradd --shell /bin/bash --home /home/${app_user} --create-home --comment "${app_user}" --password '*' --gid ${app_user} ${app_user} ; $S_LOG -s $? -d $S_NAME "Creating user \"${app_user}\" returned EXIT_CODE=$?" ; else $S_LOG -d $S_NAME "User \"${app_user}\" exists" ; fi
 
 
 echo "
@@ -105,7 +105,7 @@ echo "
 ------------------------------------------"
 if [ "$is_dc_master" = true ] ; then
     if [ ! -d "${bin_dir}" ] ; then mkdir "${bin_dir}" ; $S_LOG -s $? -d $S_NAME "Creating ${bin_dir} returned EXIT_CODE=$?" ; fi
-    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/ft-util/osync.sh" "${bin_dir}/osync.sh"
+    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/osync.sh" "${bin_dir}/osync.sh"
 
 else
     echo "Only on PDC Emulation Master"
@@ -119,8 +119,12 @@ if [ "$is_dc_master" = true ] ; then
     $S_DIR/ft-util/ft_util_conf-update -s "$S_DIR/sync.conf.example" -d "${etc_file}"
 
     function custom_conf () {
-        sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|q9" ${etc_file}
-        echo $?
+        if grep "^${1}=" ${etc_file} ; then 
+            sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|" ${etc_file}
+            $S_LOG -s $? -d $S_NAME -d "custom_conf" "${1}=${2} returned EXIT_CODE=$?"
+        else
+           $S_LOG -s crit -d $S_NAME -d "custom_conf" "Couldn't find ${1} in ${etc_file}"
+        fi
     }
 
     custom_conf INSTANCE_ID "\"${app_name}\""
