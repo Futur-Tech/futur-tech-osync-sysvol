@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/ft_util_inc_var"
+
+if [ -z "$1" ]
+then
+    $S_LOG -s crit -d $S_NAME "\$1 is empty..."
+    exit 1
+else
+    USER_NAME="$1"
+fi
+
+if [ -z "$2" ]
+then
+    GROUP_NAME="$USER_NAME"
+else
+    GROUP_NAME="$2"
+fi
+
+if [ "$(whoami)" != "root" ]
+then
+    $S_LOG -s crit -d $S_NAME "Please run as root! You are only \"$(whoami)\"."
+    exit 2
+fi
+
+if [ ! $(getent passwd ${USER}) ]
+then
+    $S_LOG -s crit -d $S_NAME "Sorry \"$USER\" doesn't exist."
+    exit 3
+else
+    USER_HOME=$(eval echo "~${USER_NAME}")
+fi
+
+SSH_DIR=${USER_HOME}/.ssh
+AUTH_KEYS_DIR=${SSH_DIR}/authorized_keys.d
+AUTH_KEYS_FILE=${SSH_DIR}/authorized_keys
+
+if [ -d "$SSH_DIR" ]
+then    
+    [ ! -e "$AUTH_KEYS_FILE" ] && touch $AUTH_KEYS_FILE
+    
+    if [ ! -d "$AUTH_KEYS_DIR" ]
+    then
+        mkdir $AUTH_KEYS_DIR
+        $S_LOG -s warn -d $S_NAME "Folder ${AUTH_KEYS_DIR} has been created. You can now add your public keys there. Exit."
+        exit 1
+    fi
+
+    if [ ! "$(ls -A ${AUTH_KEYS_DIR})" ]
+    then
+        $S_LOG -s warn -d $S_NAME "No files in ${AUTH_KEYS_DIR}. Add your public keys there. Exit."
+        exit 2
+    fi
+
+    mv ${AUTH_KEYS_FILE} ${AUTH_KEYS_FILE}.bak
+
+    echo "# DO NOT MODIFY THIS FILE. Compile it with script ft_util_sshauth !!!" > ${AUTH_KEYS_FILE}
+    cat ${AUTH_KEYS_DIR}/* >> ${AUTH_KEYS_FILE}
+    
+    chown -R ${USER_NAME}:${GROUP_NAME} ${USER_HOME}/.ssh
+    chmod -R 600 ${USER_HOME}/.ssh/
+    chmod 700 ${USER_HOME}/.ssh
+
+    $S_LOG -s $? -d $S_NAME "Creation of authorized_keys in ${USER_HOME}/.ssh/ EXIT_CODE=$?"
+
+else
+    $S_LOG -s crit -d $S_NAME "Sorry \"${SSH_DIR}\" doesn't exist. Please generate SSH Keys."
+fi
+
+exit 0
