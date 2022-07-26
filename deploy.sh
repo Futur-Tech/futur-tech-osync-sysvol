@@ -140,12 +140,15 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf REMOTE_RUN_AFTER_CMD "\"/usr/bin/samba-tool ntacl sysvolreset\""
     custom_conf LOGFILE "\"/var/log/${app_name}.log\""
     custom_conf SUDO_EXEC "true"
+    custom_conf DESTINATION_MAILS "root@$(hostname | cut -d '.' -f 2-)"
 
     # This is just to avoid problem with ft_util_conf-update which doesn't like when nothing is after =
     custom_conf SKIP_DELETION "\"\""
     custom_conf SYNC_TYPE "\"\""
     custom_conf SMTP_USER "\"\""
     custom_conf SMTP_PASSWORD "\"\""
+
+
 
 if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
     $S_LOG -s info -d $S_NAME "${etc_file} has not changed"
