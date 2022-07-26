@@ -84,6 +84,7 @@ if [ "$is_dc_master" = true ] ; then
     # Test SSH Connection
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PasswordAuthentication=no -i /home/${app_user}/.ssh/id_rsa -q ${app_user}@${other_dc_fqdn} exit
     if [ $? -ne 0 ] ; then
+        # Show instructions to deploy public key on other DC
         echo "ssh connection to ${app_user}@${other_dc_fqdn} failed
         1 - Deploy the repo to ${other_dc_fqdn}
         2 - Run the followinf command on ${other_dc_fqdn}:
@@ -93,9 +94,8 @@ if [ "$is_dc_master" = true ] ; then
         " | $S_LOG -s warn -d $S_NAME -i       
         exit
     else
-        $S_LOG -d $S_NAME "ssh connection to ${app_user}@${other_dc_fqdn} successful" ; exit
+        $S_LOG -d $S_NAME "ssh connection to ${app_user}@${other_dc_fqdn} successful"
     fi
-
 
 else
     $S_DIR_PATH/ft-util/ft_util_sshauth ${app_user} # Setup of authorized_keys
