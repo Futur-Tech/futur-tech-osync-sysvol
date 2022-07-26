@@ -84,9 +84,16 @@ if [ "$is_dc_master" = true ] ; then
     # Test SSH Connection
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PasswordAuthentication=no -i /home/${app_user}/.ssh/id_rsa -q ${app_user}@${other_dc_fqdn} exit
     if [ $? -ne 0 ] ; then
-        $S_LOG -s crit -d $S_NAME "ssh ${app_user}@${other_dc_fqdn} failed" ; exit
+        echo "ssh connection to ${app_user}@${other_dc_fqdn} failed
+        1 - Deploy the repo to ${other_dc_fqdn}
+        2 - Run the command:
+        echo \"$(cat /home/${app_user}/.ssh/id_rsa.pub)\" > /home/${app_user}/.ssh/authorized_keys.d/${app_name}
+        3 - Deploy again the repo to ${other_dc_fqdn}
+        4 - Deplay again the repo on $(hostname)
+        " | $S_LOG -s warn -d $S_NAME -i       
+        exit
     else
-        $S_LOG -s crit -d $S_NAME "ssh ${app_user}@${other_dc_fqdn} failed" ; exit
+        $S_LOG -d $S_NAME "ssh connection to ${app_user}@${other_dc_fqdn} successful" ; exit
     fi
 
 
