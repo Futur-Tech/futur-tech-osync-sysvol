@@ -82,7 +82,7 @@ if [ "$is_dc_master" = true ] ; then
     $S_DIR_PATH/ft-util/ft_util_sshkey ${app_user} # Create SSH Key
 
     # Test SSH Connection
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i /home/${app_user}/.ssh/id_rsa -q ${app_user}@${other_dc_fqdn} exit
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PasswordAuthentication=no -i /home/${app_user}/.ssh/id_rsa -q ${app_user}@${other_dc_fqdn} exit
     if [ $? -ne 0 ] ; then
         $S_LOG -s crit -d $S_NAME "ssh ${app_user}@${other_dc_fqdn} failed" ; exit
     else
