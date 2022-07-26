@@ -118,6 +118,9 @@ echo "
 if [ "$is_dc_master" = true ] ; then
     $S_DIR/ft-util/ft_util_conf-update -s "$S_DIR/sync.conf.example" -d "${etc_file}"
 
+
+    conf_before=$(<${etc_file})
+
     function custom_conf () {
         if grep "^${1}=" ${etc_file} ; then 
             sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|" ${etc_file}
@@ -135,9 +138,17 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf PRESERVE_ACL "true"
     custom_conf PRESERVE_XATTR "true"
     custom_conf RSYNC_COMPRESS "false"
-    custom_conf REMOTE_RUN_AFTER_CMD="\"/usr/bin/samba-tool ntacl sysvolreset\""
+    custom_conf REMOTE_RUN_AFTER_CMD "\"/usr/bin/samba-tool ntacl sysvolreset\""
     custom_conf LOGFILE "\"/var/log/${app_name}.log\""
     custom_conf SUDO_EXEC "true"
+
+
+if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
+    $S_LOG -s info -d $S_NAME "${etc_file} has not changed"
+else
+    $S_LOG -s warn -d $S_NAME "${etc_file} has changed"
+fi
+
 
 else
     echo "Only on PDC Emulation Master"
