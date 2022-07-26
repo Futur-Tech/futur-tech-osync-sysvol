@@ -67,6 +67,13 @@ fi
 other_dc_fqdn=$(samba-tool group listmembers 'Domain Controllers' | grep -iv $(hostname --short) | tr '[:upper:]' '[:lower:]' | sed "s/\$$/.$(hostname | cut -d '.' -f 2-)/")
 $S_LOG -d $S_NAME "${other_dc_fqdn} is the other Domain Controller on the AD domain"
 
+if ping -c 1 $other_dc_fqdn &> /dev/null ; then
+    $S_LOG -d $S_NAME "${other_dc_fqdn} is reachable"
+else
+    $S_LOG -s crit -d $S_NAME "${other_dc_fqdn} is not reachable"
+    exit
+fi
+
 exit
 
 echo "
