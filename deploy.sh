@@ -147,19 +147,28 @@ if [ "$is_dc_master" = true ] ; then
     }
 
     custom_conf INSTANCE_ID "\"${app_name}\""
+    
     custom_conf INITIATOR_SYNC_DIR "\"/var/lib/samba/sysvol\""
-    custom_conf TARGET_SYNC_DIR "\"ssh://${app_user}@${other_dc_fqdn}:22//var/lib/samba/sysvol\""
+    custom_conf TARGET_SYNC_DIR "\"ssh://${app_user}@${other_dc_fqdn}//var/lib/samba/sysvol\""
+    
+    custom_conf SUDO_EXEC "true"
     custom_conf SSH_RSA_PRIVATE_KEY "\"/home/${app_user}/.ssh/id_rsa\""
     custom_conf SSH_IGNORE_KNOWN_HOSTS "true"
     custom_conf REMOTE_HOST_PING "true"
     custom_conf REMOTE_3RD_PARTY_HOSTS "\"\""
+    
+    custom_conf SOFT_DELETE "true"
+    custom_conf SOFT_DELETE_DAYS "30"
+
     custom_conf PRESERVE_ACL "true"
     custom_conf PRESERVE_XATTR "true"
     custom_conf CHECKSUM "true"
+    
     custom_conf RSYNC_COMPRESS "false"
+    
     custom_conf REMOTE_RUN_AFTER_CMD "\"/usr/bin/samba-tool ntacl sysvolreset\""
+    
     custom_conf LOGFILE "\"/var/log/${app_name}.log\""
-    custom_conf SUDO_EXEC "true"
     custom_conf DESTINATION_MAILS "\"root@$(hostname)\""
 
     # This is just to avoid problem with ft_util_conf-update which doesn't like when nothing is after =
@@ -167,8 +176,6 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf SYNC_TYPE "\"\""
     custom_conf SMTP_USER "\"\""
     custom_conf SMTP_PASSWORD "\"\""
-
-
 
 
 if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
