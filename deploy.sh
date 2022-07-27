@@ -189,13 +189,17 @@ else
     echo "Only on PDC Emulation Master"
 fi
 
-#
-# echo "
-#   INSTALL CRON.D FILES
-# ------------------------------------------"
 
-# [ ! -e "/etc/cron.d/${app_name}" ] && $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.cron.d/${app_name}" "/etc/cron.d/${app_name}"
+echo "
+  INSTALL CRON.D FILES
+------------------------------------------"
 
+if [ "$is_dc_master" = true ] ; then
+    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/cron.d/${app_name}" "/etc/cron.d/${app_name}" "NO-BACKUP"
+else
+    # Remove cron if not master... in case roles got reversed
+    [ -e "/etc/cron.d/${app_name}" ] && rm "/etc/cron.d/${app_name}"
+fi
 
 # echo "
 #   SETUP LOG ROTATION
@@ -204,21 +208,20 @@ fi
 # [ ! -e "/var/log/${app_name}.log" ] && touch /var/log/${app_name}.log
 # $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
 
-# if [ -d "${zbx_conf_agent_d}" ]
-# then
-#   echo "
-#   INSTALL ZABBIX CONF
-# ------------------------------------------"
+if [ -d "${zbx_conf_agent_d}" ]
+then
+  echo "
+  INSTALL ZABBIX CONF
+------------------------------------------"
 
-#   $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
 
+  echo "
+  RESTART ZABBIX LATER
+------------------------------------------"
 
-#   echo "
-#   RESTART ZABBIX LATER
-# ------------------------------------------"
-
-#   echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
-#   $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
-# fi
+  echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
+  $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
+fi
 
 $S_LOG -d "$S_NAME" "End $S_NAME"
