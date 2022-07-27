@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
     <version>5.0</version>
-    <date>2022-07-27T21:55:29Z</date>
+    <date>2022-07-27T22:27:26Z</date>
     <groups>
         <group>
             <name>Templates/Futur-Tech/Applications</name>
@@ -41,6 +41,7 @@
                     <name>Samba DC: SysVol osync last successful</name>
                     <type>ZABBIX_ACTIVE</type>
                     <key>ft-osync-sysvol.success</key>
+                    <delay>5m</delay>
                     <units>unixtime</units>
                     <applications>
                         <application>
