@@ -9,8 +9,8 @@ required_pkg_arr=( "rsync" "at" )
 
 bin_dir="/usr/local/bin/${app_name}"
 src_dir="/usr/local/src/${app_name}"
-etc_file="/usr/local/src/${app_name}.conf"
-log_file="/var/log/${app_name}.log"
+etc_f="/usr/local/src/${app_name}.conf"
+log_f="/var/log/${app_name}.log"
 sudoers_etc="/etc/sudoers.d/${app_name}"
 
 $S_LOG -d $S_NAME "Start $S_DIR_NAME/$S_NAME $*"
@@ -135,16 +135,16 @@ echo "
     CONFIGURATION FILES
 ------------------------------------------"
 if [ "$is_dc_master" = true ] ; then
-    $S_DIR/ft-util/ft_util_conf-update -s "$S_DIR/sync.conf.example" -d "${etc_file}"
+    $S_DIR/ft-util/ft_util_conf-update -s "$S_DIR/sync.conf.example" -d "${etc_f}"
 
-    conf_before=$(<${etc_file})
+    conf_before=$(<${etc_f})
 
     function custom_conf () {
-        if grep "^${1}=" ${etc_file} &>/dev/null ; then 
-            sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|" ${etc_file} >/dev/null
+        if grep "^${1}=" ${etc_f} &>/dev/null ; then 
+            sed -i "s|^${1}=.*$|${1}=${2} # ${app_name}|" ${etc_f} >/dev/null
             $S_LOG -s ${?/0/debug} -d $S_NAME -d "custom_conf" "${1}=${2} returned EXIT_CODE=$?"
         else
-           $S_LOG -s crit -d $S_NAME -d "custom_conf" "Couldn't find ${1} in ${etc_file}"
+           $S_LOG -s crit -d $S_NAME -d "custom_conf" "Couldn't find ${1} in ${etc_f}"
         fi
     }
 
@@ -180,10 +180,10 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf SMTP_PASSWORD "\"\""
 
 
-    if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
-        $S_LOG -s info -d $S_NAME "${etc_file} has not changed"
+    if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_f} - ; then 
+        $S_LOG -s info -d $S_NAME "${etc_f} has not changed"
     else
-        $S_LOG -s warn -d $S_NAME "${etc_file} has changed"
+        $S_LOG -s warn -d $S_NAME "${etc_f} has changed"
     fi
 
 else
@@ -206,9 +206,9 @@ echo "
   SETUP LOG ROTATION
 ------------------------------------------"
 
-[ ! -e "${log_file}" ] && touch /var/log/${app_name}.log
-chmod 640 ${log_file}
-chown root:adm ${log_file}
+[ ! -e "${log_f}" ] && touch /var/log/${app_name}.log
+chmod 640 ${log_f}
+chown root:adm ${log_f}
 
 $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
 
