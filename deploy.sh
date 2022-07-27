@@ -111,9 +111,10 @@ else
     $S_LOG -d $S_NAME -d "$sudoers_etc" "==============================="
     echo "Defaults:${app_user} !requiretty" | sudo EDITOR='tee' visudo --file=$sudoers_etc &>/dev/null
     echo "${app_user} ALL=NOPASSWD:SETENV:$(type -p rsync),$(type -p bash)" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
+    echo "Defaults:zabbix !requiretty" | sudo EDITOR='tee' visudo --file=$sudoers_etc &>/dev/null
+    echo "zabbix ALL=(ALL) NOPASSWD:$(type -p samba-tool)" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
     cat $sudoers_etc | $S_LOG -d "$S_NAME" -d "$sudoers_etc" -i 
     $S_LOG -d $S_NAME -d "$sudoers_etc" "==============================="
-
 fi
 
 
