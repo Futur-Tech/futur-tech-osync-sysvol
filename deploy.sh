@@ -178,12 +178,11 @@ if [ "$is_dc_master" = true ] ; then
     custom_conf SMTP_PASSWORD "\"\""
 
 
-if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
-    $S_LOG -s info -d $S_NAME "${etc_file} has not changed"
-else
-    $S_LOG -s warn -d $S_NAME "${etc_file} has changed"
-fi
-
+    if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_file} - ; then 
+        $S_LOG -s info -d $S_NAME "${etc_file} has not changed"
+    else
+        $S_LOG -s warn -d $S_NAME "${etc_file} has changed"
+    fi
 
 else
     echo "Only on PDC Emulation Master"
