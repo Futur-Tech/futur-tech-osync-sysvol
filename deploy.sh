@@ -110,7 +110,7 @@ $S_LOG -d $S_NAME -d "$sudoers_etc" "==============================="
 
 echo "Defaults:${app_user} !requiretty" | sudo EDITOR='tee' visudo --file=$sudoers_etc &>/dev/null
 
-if [ "$is_dc_master" = true ] ; then
+if [ ! "$is_dc_master" = true ] ; then
     echo "${app_user} ALL=NOPASSWD:SETENV:$(type -p rsync),$(type -p bash)" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
 fi
 
