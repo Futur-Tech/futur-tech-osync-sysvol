@@ -194,7 +194,7 @@ echo "
 ------------------------------------------"
 
 if [ "$is_dc_master" = true ] ; then
-    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/cron.d/${app_name}" "/etc/cron.d/${app_name}" "NO-BACKUP"
+    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.cron.d/${app_name}" "/etc/cron.d/${app_name}" "NO-BACKUP"
 else
     # Remove cron if not master... in case roles got reversed
     [ -e "/etc/cron.d/${app_name}" ] && rm "/etc/cron.d/${app_name}"
