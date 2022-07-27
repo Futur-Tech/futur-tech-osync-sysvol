@@ -1,9 +1,10 @@
 /var/log/futur-tech-osync-sysvol.log {
     weekly
+    missingok
     rotate 12
     dateext
     compress
     delaycompress
-    missingok
-    create 644 root root
+    notifempty
+    create 640 root adm
 }

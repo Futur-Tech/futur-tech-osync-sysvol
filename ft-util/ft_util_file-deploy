@@ -14,6 +14,8 @@ fi
 function backup_file () {    
     if [ -f "$*.${bkp_suffix}" ] ; then
         $S_LOG -s debug -d "${S_NAME}|${path_src_nice}" "Backup skipped of $* > $*.${bkp_suffix}"   
+    elif [ ! -f "$*" ] ; then
+        $S_LOG -s debug -d "${S_NAME}|${path_src_nice}" "Backup skipped of $* (new file)"  
     else
         cp "$*" "$*.${bkp_suffix}"
         $S_LOG -s debug -d "${S_NAME}|${path_src_nice}" "Backup done of $* > $*.${bkp_suffix}"   
