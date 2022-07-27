@@ -26,4 +26,4 @@ cd futur-tech-osync-sysvol
 # This script will automatically pull the latest version of the branch ("main" in the example) and relaunch itself if a new version is found. Then it will run deploy.sh. Also note that any additional arguments given to this script will be passed to the deploy.sh script.
 ```
 
-You can test a synchronization with `/usr/local/bin/futur-tech-osync-sysvol/osync.sh /usr/local/src/futur-tech-osync-sysvol.conf --dry --verbose`
+You can test a synchronization with `/usr/local/bin/futur-tech-osync-sysvol/osync.sh /usr/local/etc/futur-tech-osync-sysvol.conf --dry --verbose`
