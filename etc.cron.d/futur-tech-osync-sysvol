@@ -1,2 +1,2 @@
 # Run bidirectional Osync-based SysVol replication every 10 minutes
-*/10 * * * * root  /usr/local/bin/futur-tech-osync-sysvol/osync.sh /usr/local/etc/futur-tech-osync-sysvol.conf --silent
+*/30 * * * * root  /usr/local/bin/futur-tech-osync-sysvol/osync.sh /usr/local/etc/futur-tech-osync-sysvol.conf --silent
