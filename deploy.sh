@@ -175,7 +175,7 @@ if [ "$is_dc_master" = true ] ; then
     
     custom_conf RSYNC_COMPRESS "false"
     
-    custom_conf REMOTE_RUN_AFTER_CMD "\"/usr/bin/samba-tool ntacl sysvolreset\""
+    custom_conf REMOTE_RUN_AFTER_CMD "\"sudo /usr/bin/samba-tool ntacl sysvolreset\""
     
     custom_conf LOGFILE "\"/var/log/${app_name}.log\""
     custom_conf DESTINATION_MAILS "\"root@$(hostname)\""
