@@ -10,6 +10,7 @@ required_pkg_arr=( "rsync" "at" )
 bin_dir="/usr/local/bin/${app_name}"
 src_dir="/usr/local/src/${app_name}"
 etc_file="/usr/local/src/${app_name}.conf"
+log_file="/var/log/${app_name}.log"
 sudoers_etc="/etc/sudoers.d/${app_name}"
 
 $S_LOG -d $S_NAME "Start $S_DIR_NAME/$S_NAME $*"
@@ -201,12 +202,15 @@ else
     [ -e "/etc/cron.d/${app_name}" ] && rm "/etc/cron.d/${app_name}"
 fi
 
-# echo "
-#   SETUP LOG ROTATION
-# ------------------------------------------"
+echo "
+  SETUP LOG ROTATION
+------------------------------------------"
 
-# [ ! -e "/var/log/${app_name}.log" ] && touch /var/log/${app_name}.log
-# $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
+[ ! -e "${log_file}" ] && touch /var/log/${app_name}.log
+chmod 640 ${log_file}
+chown root:adm ${log_file}
+
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
 
 if [ -d "${zbx_conf_agent_d}" ]
 then
