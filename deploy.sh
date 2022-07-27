@@ -223,18 +223,18 @@ $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logr
 
 if [ -d "${zbx_conf_agent_d}" ]
 then
-  echo "
+    echo "
   INSTALL ZABBIX CONF
 ------------------------------------------"
 
   $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
 
-  echo "
+    echo "
   RESTART ZABBIX LATER
 ------------------------------------------"
 
-  echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
-  $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
+    echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
+    $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
 fi
 
 $S_LOG -d "$S_NAME" "End $S_NAME"
