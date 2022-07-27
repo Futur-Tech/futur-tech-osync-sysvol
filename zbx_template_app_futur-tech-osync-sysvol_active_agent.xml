@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
     <version>5.0</version>
-    <date>2022-07-27T18:22:31Z</date>
+    <date>2022-07-27T21:55:29Z</date>
     <groups>
         <group>
             <name>Templates/Futur-Tech/Applications</name>
@@ -9,7 +9,7 @@
     </groups>
     <templates>
         <template>
-            <template>Template Futur-Tech App Samba Osync-based SysVol replication</template>
+            <template>futur-tech-osync-sysvol</template>
             <name>Template Futur-Tech App Samba Osync-based SysVol replication</name>
             <description>Futur-Tech: https://github.com/Futur-Tech/futur-tech-osync-sysvol</description>
             <groups>
@@ -55,18 +55,6 @@
                             <error_handler>DISCARD_VALUE</error_handler>
                         </step>
                     </preprocessing>
-                </item>
-                <item>
-                    <name>Samba DC: SysVol osync last successful age</name>
-                    <type>CALCULATED</type>
-                    <key>ft-osync-sysvol.success.age</key>
-                    <units>uptime</units>
-                    <params>now(&quot;ft-osync-sysvol.success&quot;)-last(&quot;ft-osync-sysvol.success&quot;)</params>
-                    <applications>
-                        <application>
-                            <name>Samba</name>
-                        </application>
-                    </applications>
                 </item>
                 <item>
                     <name>Samba DC: SysVolCheck successful</name>
@@ -123,7 +111,7 @@ samba-tool ntacl sysvolcheck</description>
                             <dependencies>
                                 <dependency>
                                     <name>Critical error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{Template Futur-Tech App Samba Osync-based SysVol replication:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
+                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
                                 </dependency>
                             </dependencies>
                         </trigger>
@@ -148,11 +136,11 @@ and {regexp(&quot;- \(CRITICAL\):&quot;,#1)}=0</expression>
                             <dependencies>
                                 <dependency>
                                     <name>Critical error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{Template Futur-Tech App Samba Osync-based SysVol replication:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
+                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
                                 </dependency>
                                 <dependency>
                                     <name>Error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{Template Futur-Tech App Samba Osync-based SysVol replication:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
+                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
                                 </dependency>
                             </dependencies>
                         </trigger>
@@ -162,7 +150,7 @@ and {regexp(&quot;- \(CRITICAL\):&quot;,#1)}=0</expression>
             <macros>
                 <macro>
                     <macro>{$OSYNC_SYSVOL.AGE.WARN}</macro>
-                    <value>1h</value>
+                    <value>6h</value>
                     <description>Warning max age for latest successful SysVol osync</description>
                 </macro>
             </macros>
@@ -170,10 +158,13 @@ and {regexp(&quot;- \(CRITICAL\):&quot;,#1)}=0</expression>
     </templates>
     <triggers>
         <trigger>
-            <expression>{Template Futur-Tech App Samba Osync-based SysVol replication:ft-osync-sysvol.success.age.last()}&gt;{$OSYNC_SYSVOL.AGE.WARN} and {Template Futur-Tech App Samba Osync-based SysVol replication:ft-osync-sysvol.success.last()}&gt;0 and {Template Futur-Tech App Samba Osync-based SysVol replication:ft-osync-sysvol.hasPdcEmulationMasterRole.last()}=1</expression>
-            <name>No SysVol osync for more than {$OSYNC_SYSVOL.AGE.WARN}</name>
-            <opdata>Last osync: {ITEM.LASTVALUE2}</opdata>
-            <priority>AVERAGE</priority>
+            <expression>({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&gt;{$OSYNC_SYSVOL.AGE.WARN} &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0 &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.hasPdcEmulationMasterRole.last()}=1</expression>
+            <name>No SysVol replication for more than {$OSYNC_SYSVOL.AGE.WARN}</name>
+            <opdata>Last osync: {ITEM.LASTVALUE}</opdata>
+            <priority>HIGH</priority>
+            <description>Check /var/log/futur-tech-osync-sysvol.log</description>
         </trigger>
     </triggers>
     <value_maps>
