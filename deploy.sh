@@ -9,7 +9,7 @@ required_pkg_arr=( "rsync" "at" )
 
 bin_dir="/usr/local/bin/${app_name}"
 src_dir="/usr/local/src/${app_name}"
-etc_f="/usr/local/src/${app_name}.conf"
+etc_f="/usr/local/etc/${app_name}.conf"
 log_f="/var/log/${app_name}.log"
 sudoers_etc="/etc/sudoers.d/${app_name}"
 
