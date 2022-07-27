@@ -10,6 +10,8 @@ There are a few assumptions to use this deploy script:
 - You only have 2 Domain Controllers in your domain
 - SysVol is located at `/var/lib/samba/sysvol` on both Domain Controllers
 
+There is also a Zabbix Template for monitoring the replications
+
 ## Deploy Commands
 
 Everything is executed by only a few basic deploy scripts. Just follow on screen instructions.
