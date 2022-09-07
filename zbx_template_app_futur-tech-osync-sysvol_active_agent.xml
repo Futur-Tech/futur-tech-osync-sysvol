@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
     <version>5.0</version>
-    <date>2022-07-27T22:27:26Z</date>
+    <date>2022-09-07T08:26:26Z</date>
     <groups>
         <group>
             <name>Templates/Futur-Tech/Applications</name>
@@ -93,30 +93,6 @@ samba-tool ntacl sysvolcheck</description>
                     </applications>
                     <triggers>
                         <trigger>
-                            <expression>{regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
-                            <recovery_mode>NONE</recovery_mode>
-                            <name>Critical error detected in futur-tech-osync-sysvol.log</name>
-                            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
-                            <priority>HIGH</priority>
-                            <description>This trigger need to be closed manually.</description>
-                            <manual_close>YES</manual_close>
-                        </trigger>
-                        <trigger>
-                            <expression>{regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
-                            <recovery_mode>NONE</recovery_mode>
-                            <name>Error detected in futur-tech-osync-sysvol.log</name>
-                            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
-                            <priority>AVERAGE</priority>
-                            <description>This trigger need to be closed manually.</description>
-                            <manual_close>YES</manual_close>
-                            <dependencies>
-                                <dependency>
-                                    <name>Critical error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
-                                </dependency>
-                            </dependencies>
-                        </trigger>
-                        <trigger>
                             <expression>{regexp(&quot;- \(.+\):&quot;,#1)}=1&#13;
 and {regexp(&quot;- \(WARN\):&quot;,#1)}=0&#13;
 and {regexp(&quot;- \(ERROR\):&quot;,#1)}=0&#13;
@@ -125,25 +101,6 @@ and {regexp(&quot;- \(CRITICAL\):&quot;,#1)}=0</expression>
                             <name>Uncategorised message detected in futur-tech-osync-sysvol.log</name>
                             <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
                             <description>This trigger need to be closed manually.</description>
-                        </trigger>
-                        <trigger>
-                            <expression>{regexp(&quot;- \(WARN\):&quot;,#1)}=1</expression>
-                            <recovery_mode>NONE</recovery_mode>
-                            <name>Warning detected in futur-tech-osync-sysvol.log</name>
-                            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
-                            <priority>WARNING</priority>
-                            <description>This trigger need to be closed manually.</description>
-                            <manual_close>YES</manual_close>
-                            <dependencies>
-                                <dependency>
-                                    <name>Critical error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
-                                </dependency>
-                                <dependency>
-                                    <name>Error detected in futur-tech-osync-sysvol.log</name>
-                                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
-                                </dependency>
-                            </dependencies>
                         </trigger>
                     </triggers>
                 </item>
@@ -159,6 +116,37 @@ and {regexp(&quot;- \(CRITICAL\):&quot;,#1)}=0</expression>
     </templates>
     <triggers>
         <trigger>
+            <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
+            <recovery_mode>RECOVERY_EXPRESSION</recovery_mode>
+            <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+            <name>Critical error detected in futur-tech-osync-sysvol.log</name>
+            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
+            <priority>HIGH</priority>
+            <manual_close>YES</manual_close>
+        </trigger>
+        <trigger>
+            <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
+            <recovery_mode>RECOVERY_EXPRESSION</recovery_mode>
+            <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+            <name>Error detected in futur-tech-osync-sysvol.log</name>
+            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
+            <priority>AVERAGE</priority>
+            <manual_close>YES</manual_close>
+            <dependencies>
+                <dependency>
+                    <name>Critical error detected in futur-tech-osync-sysvol.log</name>
+                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
+                    <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+                </dependency>
+            </dependencies>
+        </trigger>
+        <trigger>
             <expression>({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&gt;{$OSYNC_SYSVOL.AGE.WARN} &#13;
 and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0 &#13;
 and {futur-tech-osync-sysvol:ft-osync-sysvol.hasPdcEmulationMasterRole.last()}=1</expression>
@@ -166,6 +154,33 @@ and {futur-tech-osync-sysvol:ft-osync-sysvol.hasPdcEmulationMasterRole.last()}=1
             <opdata>Last osync: {ITEM.LASTVALUE}</opdata>
             <priority>HIGH</priority>
             <description>Check /var/log/futur-tech-osync-sysvol.log</description>
+        </trigger>
+        <trigger>
+            <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(WARN\):&quot;,#1)}=1</expression>
+            <recovery_mode>RECOVERY_EXPRESSION</recovery_mode>
+            <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+            <name>Warning detected in futur-tech-osync-sysvol.log</name>
+            <opdata>{{ITEM.VALUE}.regsub(&quot;(.*)&quot;, \1)}</opdata>
+            <priority>WARNING</priority>
+            <manual_close>YES</manual_close>
+            <dependencies>
+                <dependency>
+                    <name>Critical error detected in futur-tech-osync-sysvol.log</name>
+                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(CRITICAL\):&quot;,#1)}=1</expression>
+                    <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+                </dependency>
+                <dependency>
+                    <name>Error detected in futur-tech-osync-sysvol.log</name>
+                    <expression>{futur-tech-osync-sysvol:logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip].regexp(&quot;- \(ERROR\):&quot;,#1)}=1</expression>
+                    <recovery_expression>{futur-tech-osync-sysvol:ft-osync-sysvol.sysvolcheck.last()}=1&#13;
+and ({futur-tech-osync-sysvol:ft-osync-sysvol.success.now()}-{futur-tech-osync-sysvol:ft-osync-sysvol.success.last()})&lt;15m &#13;
+and {futur-tech-osync-sysvol:ft-osync-sysvol.success.last()}&gt;0</recovery_expression>
+                </dependency>
+            </dependencies>
         </trigger>
     </triggers>
     <value_maps>
