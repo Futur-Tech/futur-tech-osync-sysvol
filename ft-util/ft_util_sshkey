@@ -2,60 +2,53 @@
 
 source "$(dirname "$0")/ft_util_inc_var"
 
-if [ -z "$1" ]
-then
+if [ -z "$1" ]; then
     $S_LOG -s crit -d $S_NAME "\$1 is empty..."
     exit 1
 else
-    USER_NAME="$1"
+    user_name="$1"
 fi
 
-if [ -z "$2" ]
-then
-    GROUP_NAME="$USER_NAME"
+if [ -z "$2" ]; then
+    group_name="$user_name"
 else
-    GROUP_NAME="$2"
+    group_name="$2"
 fi
 
-
-if [ "$(whoami)" != "root" ]
-then
+if [ "$(whoami)" != "root" ]; then
     $S_LOG -s crit -d $S_NAME "Please run as root! You are only \"$(whoami)\"."
     exit 2
 fi
 
-if [ ! $(getent passwd ${USER}) ]
-then
+if [ ! $(getent passwd ${USER}) ]; then
     $S_LOG -s crit -d $S_NAME "Sorry \"$USER\" doesn't exist."
     exit 3
 else
-    USER_HOME=$(eval echo "~${USER_NAME}")
+    user_home=$(eval echo "~${user_name}")
 fi
 
-if [ ! -e "${USER_HOME}/.ssh/id_rsa.pub" ]
-then
-    
-    [ ! -d "${USER_HOME}/.ssh" ] && mkdir "${USER_HOME}/.ssh"
-    ssh-keygen -q -f "${USER_HOME}/.ssh/id_rsa" -N "" -t rsa -C ${USER_NAME}@$(hostname)
-    [ ! -e "${USER_HOME}/.ssh/authorized_keys" ] && touch "${USER_HOME}/.ssh/authorized_keys"
+if [ ! -e "${user_home}/.ssh/id_rsa.pub" ]; then
 
-    chown -R ${USER_NAME}:${GROUP_NAME} ${USER_HOME}/.ssh
-    chmod -R 600 ${USER_HOME}/.ssh/
-    chmod 700 ${USER_HOME}/.ssh
+    [ ! -d "${user_home}/.ssh" ] && mkdir "${user_home}/.ssh"
+    ssh-keygen -q -f "${user_home}/.ssh/id_rsa" -N "" -t rsa -C ${user_name}@$(hostname)
+    [ ! -e "${user_home}/.ssh/authorized_keys" ] && touch "${user_home}/.ssh/authorized_keys"
 
-    $S_LOG -s $? -d $S_NAME "Creation of SSH Keys in ${USER_HOME}/.ssh/ EXIT_CODE=$?"
+    chown -R ${user_name}:${group_name} ${user_home}/.ssh
+    chmod -R 600 ${user_home}/.ssh/
+    chmod 700 ${user_home}/.ssh
 
-    if [ -e "${USER_HOME}/.ssh/id_rsa.pub" ]
-    then
-        PUB_KEY=$(cat ${USER_HOME}/.ssh/id_rsa.pub)
-        ID_KEY=$(cat ${USER_HOME}/.ssh/id_rsa.pub | cut -f3 -d " ")
+    $S_LOG -s $? -d $S_NAME "Creation of SSH Keys in ${user_home}/.ssh/ EXIT_CODE=$?"
+
+    if [ -e "${user_home}/.ssh/id_rsa.pub" ]; then
+        pub_key=$(cat ${user_home}/.ssh/id_rsa.pub)
+        id_key=$(cat ${user_home}/.ssh/id_rsa.pub | cut -f3 -d " ")
 
         echo
         echo "======================================"
-        echo "==== ${USER_HOME}/.ssh/id_rsa.pub"
+        echo "==== ${user_home}/.ssh/id_rsa.pub"
         echo "======================================"
         echo
-        echo "$PUB_KEY"
+        echo "$pub_key"
         echo
         echo "======================================"
         echo "======================================"
@@ -64,24 +57,23 @@ then
         exit 0
 
     else
-        $S_LOG -s err -d $S_NAME "SSH Keys in ${USER_HOME}/.ssh/ could not be created!"
+        $S_LOG -s err -d $S_NAME "SSH Keys in ${user_home}/.ssh/ could not be created!"
         exit 10
     fi
 
 else
-    $S_LOG -d $S_NAME "SSH Keys in ${USER_HOME}/.ssh/ are present "
+    $S_LOG -d $S_NAME "SSH Keys in ${user_home}/.ssh/ are present "
     exit 0
 fi
-
 
 # if [ ! -f "$ZBX_RUN/.ssh/id_rsa" ] || [ ! -f "$ZBX_RUN/.ssh/id_rsa.pub" ]
 # then
 #     ssh-keygen -q -t rsa -N '' -f $ZBX_RUN/.ssh/id_rsa <<<y 2>&1 >/dev/null
 #     $S_LOG -d $S_NAME "Creating SSH keys in $ZBX_RUN/.ssh"
-#     PUB_KEY=$(cat $ZBX_RUN/.ssh/id_rsa.pub)
-#     ID_KEY=$(cat $ZBX_RUN/.ssh/id_rsa.pub | cut -f3 -d " ")
-#     sed -i "/$ID_KEY/d" /root/.ssh/authorized_keys
-#     # echo $PUB_KEY >> /root/.ssh/authorized_keys
+#     pub_key=$(cat $ZBX_RUN/.ssh/id_rsa.pub)
+#     id_key=$(cat $ZBX_RUN/.ssh/id_rsa.pub | cut -f3 -d " ")
+#     sed -i "/$id_key/d" /root/.ssh/authorized_keys
+#     # echo $pub_key >> /root/.ssh/authorized_keys
 
 #     touch $ZBX_RUN/.ssh/known_hosts
 #     ssh-keygen -R localhost -f $ZBX_RUN/.ssh/known_hosts
