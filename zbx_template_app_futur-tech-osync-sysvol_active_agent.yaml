@@ -1,0 +1,154 @@
+zabbix_export:
+  version: '6.0'
+  date: '2023-08-03T16:15:41Z'
+  groups:
+    - uuid: 7f27dc73981940769811e7fae4a26772
+      name: Templates/Futur-Tech/Applications
+  templates:
+    - uuid: 0fe1faf1d5e2484cae800e5022708bb4
+      template: futur-tech-osync-sysvol
+      name: 'Futur-Tech App Samba Osync-based SysVol replication'
+      description: 'Futur-Tech: https://github.com/Futur-Tech/futur-tech-osync-sysvol'
+      groups:
+        - name: Templates/Futur-Tech/Applications
+      items:
+        - uuid: 907f21c914ee4bbba92fcb11fcb3fffc
+          name: 'Samba DC: has PdcEmulationMasterRole'
+          type: ZABBIX_ACTIVE
+          key: ft-osync-sysvol.hasPdcEmulationMasterRole
+          delay: 1h
+          valuemap:
+            name: 'Generic YesNo'
+          tags:
+            - tag: Application
+              value: Samba
+        - uuid: 46ba7850f60c499da97f9b291ace53b9
+          name: 'Samba DC: SysVol osync last successful'
+          type: ZABBIX_ACTIVE
+          key: ft-osync-sysvol.success
+          delay: 5m
+          units: unixtime
+          preprocessing:
+            - type: IN_RANGE
+              parameters:
+                - '1'
+                - ''
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: Application
+              value: Samba
+        - uuid: 9918cd638e47464eb81d40f0268ea25a
+          name: 'Samba DC: SysVolCheck successful'
+          type: ZABBIX_ACTIVE
+          key: ft-osync-sysvol.sysvolcheck
+          delay: 1h
+          valuemap:
+            name: 'Generic YesNo'
+          tags:
+            - tag: Application
+              value: Samba
+          triggers:
+            - uuid: b0a4de2e38b347acb1e27289932e72a4
+              expression: last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=0
+              name: 'SysVolCheck failed'
+              priority: AVERAGE
+              description: |
+                An error was returned when running
+                samba-tool ntacl sysvolcheck
+        - uuid: ccfd5d8be4324c19bfee515334c67dd9
+          name: 'Samba DC: SysVol osync log'
+          type: ZABBIX_ACTIVE
+          key: 'logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip]'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: Application
+              value: Samba
+          triggers:
+            - uuid: ed5836cfabec4c40ba85228142993a68
+              expression: |
+                find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(.+\):")=1
+                and find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(WARN\):")=0
+                and find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(ERROR\):")=0
+                and find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(CRITICAL\):")=0
+              recovery_mode: NONE
+              name: 'Uncategorised message detected in futur-tech-osync-sysvol.log'
+              opdata: '{{ITEM.VALUE}.regsub("(.*)", \1)}'
+              description: 'This trigger need to be closed manually.'
+      tags:
+        - tag: Futur-Tech
+      macros:
+        - macro: '{$OSYNC_SYSVOL.AGE.WARN}'
+          value: 6h
+          description: 'Warning max age for latest successful SysVol osync'
+      valuemaps:
+        - uuid: a5e7c87ae9f44b9ab7a3fc8f123ee32d
+          name: 'Generic YesNo'
+          mappings:
+            - value: '0'
+              newvalue: 'No'
+            - value: '1'
+              newvalue: 'Yes'
+  triggers:
+    - uuid: 6a03014b6aba4fd2818f44919eb71aae
+      expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(CRITICAL\):")=1'
+      recovery_mode: RECOVERY_EXPRESSION
+      recovery_expression: |
+        last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+        and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+        and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
+      name: 'Critical error detected in futur-tech-osync-sysvol.log'
+      opdata: '{{ITEM.VALUE}.regsub("(.*)", \1)}'
+      priority: HIGH
+      manual_close: 'YES'
+    - uuid: eb4ffd1ba65245a98faa36abf4f09249
+      expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(ERROR\):")=1'
+      recovery_mode: RECOVERY_EXPRESSION
+      recovery_expression: |
+        last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+        and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+        and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
+      name: 'Error detected in futur-tech-osync-sysvol.log'
+      opdata: '{{ITEM.VALUE}.regsub("(.*)", \1)}'
+      priority: AVERAGE
+      manual_close: 'YES'
+      dependencies:
+        - name: 'Critical error detected in futur-tech-osync-sysvol.log'
+          expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(CRITICAL\):")=1'
+          recovery_expression: |
+            last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+            and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+            and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
+    - uuid: 1ef91c9d0b38425d8a46ec18e967af2e
+      expression: |
+        (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))>{$OSYNC_SYSVOL.AGE.WARN} 
+        and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0 
+        and last(/futur-tech-osync-sysvol/ft-osync-sysvol.hasPdcEmulationMasterRole)=1
+      name: 'No SysVol replication for more than {$OSYNC_SYSVOL.AGE.WARN}'
+      opdata: 'Last osync: {ITEM.LASTVALUE}'
+      priority: HIGH
+      description: 'Check /var/log/futur-tech-osync-sysvol.log'
+    - uuid: 6d14b44c2bcc4585bfe49a832ff0c8e3
+      expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(WARN\):")=1'
+      recovery_mode: RECOVERY_EXPRESSION
+      recovery_expression: |
+        last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+        and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+        and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
+      name: 'Warning detected in futur-tech-osync-sysvol.log'
+      opdata: '{{ITEM.VALUE}.regsub("(.*)", \1)}'
+      priority: WARNING
+      manual_close: 'YES'
+      dependencies:
+        - name: 'Critical error detected in futur-tech-osync-sysvol.log'
+          expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(CRITICAL\):")=1'
+          recovery_expression: |
+            last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+            and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+            and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
+        - name: 'Error detected in futur-tech-osync-sysvol.log'
+          expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(ERROR\):")=1'
+          recovery_expression: |
+            last(/futur-tech-osync-sysvol/ft-osync-sysvol.sysvolcheck)=1
+            and (now()-last(/futur-tech-osync-sysvol/ft-osync-sysvol.success))<15m 
+            and last(/futur-tech-osync-sysvol/ft-osync-sysvol.success)>0
