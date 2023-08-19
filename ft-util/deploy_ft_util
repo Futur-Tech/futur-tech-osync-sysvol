@@ -18,11 +18,14 @@ download_file ft_util_bak-cleaner
 download_file ft_util_bak-cleaner
 download_file ft_util_conf-update
 download_file ft_util_file-deploy
+download_file ft_util_inc_func
 download_file ft_util_inc_var
 download_file ft_util_log
 download_file ft_util_pkg
 download_file ft_util_sshauth
 download_file ft_util_sshkey
+download_file ft_util_sudoersd
+download_file ft_util_usrmgmt
 
 download_file README.md
 

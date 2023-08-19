@@ -4,20 +4,19 @@
 #Check dryruns with nosuffix mode for timestampList
 
 PROGRAM="osync" # Rsync based two way sync engine with fault tolerance
-AUTHOR="(C) 2013-2022 by Orsiris de Jong"
+AUTHOR="(C) 2013-2023 by Orsiris de Jong"
 CONTACT="http://www.netpower.fr/osync - ozy@netpower.fr"
-PROGRAM_VERSION=1.3.0-rc3
-PROGRAM_BUILD=2021062901
+PROGRAM_VERSION=1.3.0
+PROGRAM_BUILD=2023061401
 IS_STABLE=true
 
 CONFIG_FILE_REVISION_REQUIRED=1.3.0
 
-
-_OFUNCTIONS_VERSION=2.4.3
-_OFUNCTIONS_BUILD=2022050801
+_OFUNCTIONS_VERSION=2.5.1
+_OFUNCTIONS_BUILD=2023061401
 _OFUNCTIONS_BOOTSTRAP=true
 
-if ! type "$BASH" > /dev/null; then
+if ! type "$BASH" >/dev/null; then
 	echo "Please run this script only with bash shell. Tested on bash >= 3.2"
 	exit 127
 fi
@@ -37,6 +36,8 @@ _LOGGER_SILENT=false
 _LOGGER_VERBOSE=false
 _LOGGER_ERR_ONLY=false
 _LOGGER_PREFIX="date"
+_LOGGER_WRITE_PARTIAL_LOGS=false # Writes partial log files to /tmp so sending logs via alerts can feed on them
+_OFUNCTIONS_SHOW_SPINNER=true    # Show spinner in ExecTasks function
 if [ "$KEEP_LOGGING" == "" ]; then
 	KEEP_LOGGING=1801
 fi
@@ -44,7 +45,6 @@ fi
 # Initial error status, logging 'WARN', 'ERROR' or 'CRITICAL' will enable alerts flags
 ERROR_ALERT=false
 WARN_ALERT=false
-
 
 ## allow debugging from command line with _DEBUG=true
 if [ ! "$_DEBUG" == true ]; then
@@ -69,11 +69,11 @@ function PoorMansRandomGenerator {
 	local number
 
 	# Some read bytes cannot be used, se we read twice the number of required bytes
-	dd if=/dev/urandom bs=$digits count=2 2> /dev/null | while read -r -n1 char; do
+	dd if=/dev/urandom bs=$digits count=2 2>/dev/null | while read -r -n1 char; do
 		number=$number$(printf "%d" "'$char")
 		if [ ${#number} -ge $digits ]; then
 			echo ${number:0:$digits}
-			break;
+			break
 		fi
 	done
 }
@@ -124,32 +124,33 @@ ALERT_LOG_FILE="$RUN_DIR/$PROGRAM.$SCRIPT_PID.$TSTAMP.last.log"
 set -o pipefail
 set -o errtrace
 
-
 # Array to string converter, see http://stackoverflow.com/questions/1527049/bash-join-elements-of-an-array
 # usage: joinString separaratorChar Array
 function joinString {
-	local IFS="$1"; shift; echo "$*";
+	local IFS="$1"
+	shift
+	echo "$*"
 }
 
 # Sub function of Logger
 function _Logger {
-	local logValue="${1}"		# Log to file
-	local stdValue="${2}"		# Log to screeen
-	local toStdErr="${3:-false}"	# Log to stderr instead of stdout
+	local logValue="${1}"        # Log to file
+	local stdValue="${2}"        # Log to screeen
+	local toStdErr="${3:-false}" # Log to stderr instead of stdout
 
 	if [ "$logValue" != "" ]; then
-		echo -e "$logValue" >> "$LOG_FILE"
+		echo -e "$logValue" >>"$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
-			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+			echo -e "$logValue" >>"$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
 
 	if [ "$stdValue" != "" ] && [ "$_LOGGER_SILENT" != true ]; then
 		if [ $toStdErr == true ]; then
 			# Force stderr color in subshell
-			(>&2 echo -e "$stdValue")
+			(echo >&2 -e "$stdValue")
 
 		else
 			echo -e "$stdValue"
@@ -159,9 +160,9 @@ function _Logger {
 
 # Remote logger similar to below Logger, without log to file and alert flags
 function RemoteLogger {
-	local value="${1}"		# Sentence to log (in double quotes)
-	local level="${2}"		# Log level
-	local retval="${3:-undef}"	# optional return value of command
+	local value="${1}"         # Sentence to log (in double quotes)
+	local level="${2}"         # Log level
+	local retval="${3:-undef}" # optional return value of command
 
 	local prefix
 
@@ -202,7 +203,7 @@ function RemoteLogger {
 		fi
 		return
 	elif [ "$level" == "ALWAYS" ]; then
-		_Logger	 "" "$prefix$value"
+		_Logger "" "$prefix$value"
 		return
 	elif [ "$level" == "DEBUG" ]; then
 		if [ "$_DEBUG" == true ]; then
@@ -231,9 +232,9 @@ function RemoteLogger {
 # ALWAYS is sent to stdout unless _LOGGER_SILENT=true
 # DEBUG & PARANOIA_DEBUG are only sent to stdout if _DEBUG=true
 function Logger {
-	local value="${1}"		# Sentence to log (in double quotes)
-	local level="${2}"		# Log level
-	local retval="${3:-undef}"	# optional return value of command
+	local value="${1}"         # Sentence to log (in double quotes)
+	local level="${2}"         # Log level
+	local retval="${3:-undef}" # optional return value of command
 
 	local prefix
 
@@ -252,18 +253,18 @@ function Logger {
 	if [ "$level" == "CRITICAL" ]; then
 		_Logger "$prefix($level):$value" "$prefix\e[1;33;41m$value\e[0m" true
 		ERROR_ALERT=true
-		# ERROR_ALERT / WARN_ALERT is not set in main when Logger is called from a subprocess. Need to keep this flag.
-		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
+		# ERROR_ALERT / WARN_ALERT is not set in main when Logger is called from a subprocess. We need to create these flag files for ERROR_ALERT / WARN_ALERT to be picked up by Alert
+		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >>"$RUN_DIR/$PROGRAM.ERROR_ALERT.$SCRIPT_PID.$TSTAMP"
 		return
 	elif [ "$level" == "ERROR" ]; then
 		_Logger "$prefix($level):$value" "$prefix\e[91m$value\e[0m" true
 		ERROR_ALERT=true
-		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
+		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >>"$RUN_DIR/$PROGRAM.ERROR_ALERT.$SCRIPT_PID.$TSTAMP"
 		return
 	elif [ "$level" == "WARN" ]; then
 		_Logger "$prefix($level):$value" "$prefix\e[33m$value\e[0m" true
 		WARN_ALERT=true
-		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.warn.$SCRIPT_PID.$TSTAMP"
+		echo -e "[$retval] in [$(joinString , ${FUNCNAME[@]})] SP=$SCRIPT_PID P=$$\n$prefix($level):$value" >>"$RUN_DIR/$PROGRAM.WARN_ALERT.$SCRIPT_PID.$TSTAMP"
 		return
 	elif [ "$level" == "NOTICE" ]; then
 		if [ "$_LOGGER_ERR_ONLY" != true ]; then
@@ -293,8 +294,8 @@ function Logger {
 function IsInteger {
 	local value="${1}"
 
-	if type expr > /dev/null 2>&1; then
-		expr "$value" : '^[0-9]\{1,\}$' > /dev/null 2>&1
+	if type expr >/dev/null 2>&1; then
+		expr "$value" : '^[0-9]\{1,\}$' >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			echo 1
 		else
@@ -311,7 +312,7 @@ function IsInteger {
 
 # Portable child (and grandchild) kill function tester under Linux, BSD and MacOS X
 function KillChilds {
-	local pid="${1}" # Parent pid to kill childs
+	local pid="${1}"         # Parent pid to kill childs
 	local self="${2:-false}" # Should parent be killed too ?
 
 	# Paranoid checks, we can safely assume that $pid should not be 0 nor 1
@@ -320,7 +321,7 @@ function KillChilds {
 		return 1
 	fi
 
-	if kill -0 "$pid" > /dev/null 2>&1; then
+	if kill -0 "$pid" >/dev/null 2>&1; then
 		if children="$(pgrep -P "$pid")"; then
 			if [[ "$pid" == *"$children"* ]]; then
 				Logger "Bogus pgrep implementation." "CRITICAL"
@@ -335,7 +336,7 @@ function KillChilds {
 	# Try to kill nicely, if not, wait 15 seconds to let Trap actions happen before killing
 	if [ "$self" == true ]; then
 		# We need to check for pid again because it may have disappeared after recursive function call
-		if kill -0 "$pid" > /dev/null 2>&1; then
+		if kill -0 "$pid" >/dev/null 2>&1; then
 			kill -s TERM "$pid"
 			Logger "Sent SIGTERM to process [$pid]." "DEBUG"
 			if [ $? -ne 0 ]; then
@@ -345,7 +346,7 @@ function KillChilds {
 				if [ $? -ne 0 ]; then
 					Logger "Sending SIGKILL to process [$pid] failed." "DEBUG"
 					return 1
-				fi	# Simplify the return 0 logic here
+				fi # Simplify the return 0 logic here
 			else
 				return 0
 			fi
@@ -358,18 +359,17 @@ function KillChilds {
 }
 
 function KillAllChilds {
-	local pids="${1}" # List of parent pids to kill separated by semi-colon
+	local pids="${1}"        # List of parent pids to kill separated by semi-colon
 	local self="${2:-false}" # Should parent be killed too ?
-
 
 	local errorcount=0
 
-	IFS=';' read -a pidsArray <<< "$pids"
+	IFS=';' read -a pidsArray <<<"$pids"
 	for pid in "${pidsArray[@]}"; do
 		KillChilds $pid $self
 		if [ $? -ne 0 ]; then
-			errorcount=$((errorcount+1))
-			fi
+			errorcount=$((errorcount + 1))
+		fi
 	done
 	return $errorcount
 }
@@ -378,11 +378,11 @@ function GenericTrapQuit {
 	local exitcode=0
 
 	# Get ERROR / WARN alert flags from subprocesses that call Logger
-	if [ -f "$RUN_DIR/$PROGRAM.Logger.warn.$SCRIPT_PID.$TSTAMP" ]; then
+	if [ -f "$RUN_DIR/$PROGRAM.WARN_ALERT.$SCRIPT_PID.$TSTAMP" ]; then
 		WARN_ALERT=true
 		exitcode=2
 	fi
-	if [ -f "$RUN_DIR/$PROGRAM.Logger.error.$SCRIPT_PID.$TSTAMP" ]; then
+	if [ -f "$RUN_DIR/$PROGRAM.ERROR_ALERT.$SCRIPT_PID.$TSTAMP" ]; then
 		ERROR_ALERT=true
 		exitcode=1
 	fi
@@ -390,7 +390,6 @@ function GenericTrapQuit {
 	CleanUp
 	exit $exitcode
 }
-
 
 function CleanUp {
 	# Exit controlmaster before the socket gets deleted
@@ -402,7 +401,7 @@ function CleanUp {
 		# Removing optional remote $RUN_DIR that goes into local $RUN_DIR
 		if [ -d "$RUN_DIR/$PROGRAM.remote.$SCRIPT_PID.$TSTAMP" ]; then
 			rm -rf "$RUN_DIR/$PROGRAM.remote.$SCRIPT_PID.$TSTAMP"
-                fi
+		fi
 		# Removing all temporary run files
 		rm -f "$RUN_DIR/$PROGRAM."*".$SCRIPT_PID.$TSTAMP"
 		# Fix for sed -i requiring backup extension for BSD & Mac (see all sed -i statements)
@@ -410,13 +409,10 @@ function CleanUp {
 	fi
 }
 
-
-
 # osync/obackup/pmocr script specific mail alert function, use SendEmail function for generic mail sending
 function SendAlert {
-	local runAlert="${1:-false}" # Specifies if current message is sent while running or at the end of a run
+	local runAlert="${1:-false}"  # Specifies if current message is sent while running or at the end of a run
 	local attachment="${2:-true}" # Should we send the log file as attachment
-
 
 	local attachmentFile
 	local subject
@@ -433,7 +429,7 @@ function SendAlert {
 
 	if [ $attachment == true ]; then
 		attachmentFile="$LOG_FILE"
-		if type "$COMPRESSION_PROGRAM" > /dev/null 2>&1; then
+		if type "$COMPRESSION_PROGRAM" >/dev/null 2>&1; then
 			eval "cat \"$LOG_FILE\" \"$COMPRESSION_PROGRAM\" > \"$ALERT_LOG_FILE\""
 			if [ $? -eq 0 ]; then
 				attachmentFile="$ALERT_LOG_FILE"
@@ -441,7 +437,11 @@ function SendAlert {
 		fi
 	fi
 
-	body="$MAIL_ALERT_MSG"$'\n\n'"Last 1000 lines of current log"$'\n\n'"$(tail -n 1000 "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP")"
+	if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ]; then
+		body="$MAIL_ALERT_MSG"$'\n\n'"Last 1000 lines of current log"$'\n\n'"$(tail -n 1000 "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP")"
+	else
+		body="$MAIL_ALERT_MSG"$'\n\n'"Last 1000 lines of current log"$'\n\n'"$(tail -n 1000 "$LOG_FILE")"
+	fi
 
 	if [ $ERROR_ALERT == true ]; then
 		subject="Error alert for $INSTANCE_ID"
@@ -494,7 +494,6 @@ function SendEmail {
 	local smtpUser="${9}"
 	local smtpPassword="${10}"
 
-
 	local mail_no_attachment=
 	local attachment_command=
 
@@ -516,7 +515,7 @@ function SendEmail {
 
 	# Prior to sending an email, convert its body if needed
 	if [ "$MAIL_BODY_CHARSET" != "" ]; then
-		if type iconv > /dev/null 2>&1; then
+		if type iconv >/dev/null 2>&1; then
 			echo "$message" | iconv -f UTF-8 -t $MAIL_BODY_CHARSET -o "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.iconv.$SCRIPT_PID.$TSTAMP"
 			message="$(cat "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.iconv.$SCRIPT_PID.$TSTAMP")"
 		else
@@ -536,7 +535,7 @@ function SendEmail {
 			Logger "Missing smtp port, assuming 25." "WARN"
 			smtpPort=25
 		fi
-		if type sendmail > /dev/null 2>&1; then
+		if type sendmail >/dev/null 2>&1; then
 			if [ "$encryption" == "tls" ]; then
 				echo -e "Subject:$subject\r\n$message" | $(type -p sendmail) -f "$senderMail" -H "exec openssl s_client -quiet -tls1_2 -starttls smtp -connect $smtpServer:$smtpPort" -au"$smtpUser" -ap"$smtpPassword" "$destinationMails"
 			elif [ "$encryption" == "ssl" ]; then
@@ -561,7 +560,7 @@ function SendEmail {
 		fi
 	fi
 
-	if type mutt > /dev/null 2>&1 ; then
+	if type mutt >/dev/null 2>&1; then
 		# We need to replace spaces with comma in order for mutt to be able to process multiple destinations
 		echo "$message" | $(type -p mutt) -x -s "$subject" "${destinationMails// /,}" $attachment_command
 		if [ $? -ne 0 ]; then
@@ -572,14 +571,14 @@ function SendEmail {
 		fi
 	fi
 
-	if type mail > /dev/null 2>&1 ; then
+	if type mail >/dev/null 2>&1; then
 		# We need to detect which version of mail is installed
-		if ! $(type -p mail) -V > /dev/null 2>&1; then
+		if ! $(type -p mail) -V >/dev/null 2>&1; then
 			# This may be MacOS mail program
 			attachment_command=""
-		elif [ "$mail_no_attachment" -eq 0 ] && $(type -p mail) -V | grep "GNU" > /dev/null; then
+		elif [ "$mail_no_attachment" -eq 0 ] && $(type -p mail) -V | grep "GNU" >/dev/null; then
 			attachment_command="-A $attachment"
-		elif [ "$mail_no_attachment" -eq 0 ] && $(type -p mail) -V > /dev/null; then
+		elif [ "$mail_no_attachment" -eq 0 ] && $(type -p mail) -V >/dev/null; then
 			attachment_command="-a$attachment"
 		else
 			attachment_command=""
@@ -601,7 +600,7 @@ function SendEmail {
 		fi
 	fi
 
-	if type sendmail > /dev/null 2>&1 ; then
+	if type sendmail >/dev/null 2>&1; then
 		echo -e "Subject:$subject\r\n$message" | $(type -p sendmail) "$destinationMails"
 		if [ $? -ne 0 ]; then
 			Logger "Cannot send mail via $(type -p sendmail) !!!" "WARN"
@@ -612,7 +611,7 @@ function SendEmail {
 	fi
 
 	# Windows specific
-	if type "mailsend.exe" > /dev/null 2>&1 ; then
+	if type "mailsend.exe" >/dev/null 2>&1; then
 		if [ "$senderMail" == "" ]; then
 			Logger "Missing sender email." "ERROR"
 			return 1
@@ -625,7 +624,7 @@ function SendEmail {
 			Logger "Missing smtp port, assuming 25." "WARN"
 			smtpPort=25
 		fi
-		if [ "$encryption" != "tls" ] && [ "$encryption" != "ssl" ]  && [ "$encryption" != "none" ]; then
+		if [ "$encryption" != "tls" ] && [ "$encryption" != "ssl" ] && [ "$encryption" != "none" ]; then
 			Logger "Bogus smtp encryption, assuming none." "WARN"
 			encryption_string=
 		elif [ "$encryption" == "tls" ]; then
@@ -666,14 +665,13 @@ function TrapError {
 	local code="${2:-1}"
 
 	if [ $_LOGGER_SILENT == false ]; then
-		(>&2 echo -e "\e[45m/!\ ERROR in ${job}: Near line ${line}, exit code ${code}\e[0m")
+		(echo >&2 -e "\e[45m/!\ ERROR in ${job}: Near line ${line}, exit code ${code}\e[0m")
 	fi
 }
 
 function LoadConfigFile {
 	local configFile="${1}"
 	local revisionRequired="${2}"
-
 
 	local revisionPresent
 
@@ -695,7 +693,7 @@ function LoadConfigFile {
 			fi
 		fi
 		# Remove everything that is not a variable assignation
-		grep '^[^ ]*=[^;&]*' "$configFile" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP"
+		grep '^[^ ]*=[^;&]*' "$configFile" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP"
 		source "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP"
 	fi
 
@@ -706,7 +704,7 @@ function LoadConfigFile {
 
 _OFUNCTIONS_SPINNER="|/-\\"
 function Spinner {
-	if [ $_LOGGER_SILENT == true ] || [ "$_LOGGER_ERR_ONLY" == true ] || [ "$_SYNC_ON_CHANGES" == "initiator" ] || [ "$_SYNC_ON_CHANGES" == "target" ] ; then
+	if [ $_LOGGER_SILENT == true ] || [ "$_LOGGER_ERR_ONLY" == true ] || [ "$_SYNC_ON_CHANGES" == "initiator" ] || [ "$_SYNC_ON_CHANGES" == "target" ]; then
 		return 0
 	else
 		printf " [%c]  \b\b\b\b\b\b" "$_OFUNCTIONS_SPINNER"
@@ -782,32 +780,30 @@ function ParallelExec {
 
 function ExecTasks {
 	# Mandatory arguments
-	local mainInput="${1}"				# Contains list of pids / commands separated by semicolons or filepath to list of pids / commands
+	local mainInput="${1}" # Contains list of pids / commands separated by semicolons or filepath to list of pids / commands
 
 	# Optional arguments
-	local id="${2:-(undisclosed)}"			# Optional ID in order to identify global variables from this run (only bash variable names, no '-'). Global variables are WAIT_FOR_TASK_COMPLETION_$id and HARD_MAX_EXEC_TIME_REACHED_$id
-	local readFromFile="${3:-false}"		# Is mainInput / auxInput a semicolon separated list (true) or a filepath (false)
-	local softPerProcessTime="${4:-0}"		# Max time (in seconds) a pid or command can run before a warning is logged, unless set to 0
-	local hardPerProcessTime="${5:-0}"		# Max time (in seconds) a pid or command can run before the given command / pid is stopped, unless set to 0
-	local softMaxTime="${6:-0}"			# Max time (in seconds) for the whole function to run before a warning is logged, unless set to 0
-	local hardMaxTime="${7:-0}"			# Max time (in seconds) for the whole function to run before all pids / commands given are stopped, unless set to 0
-	local counting="${8:-true}"			# Should softMaxTime and hardMaxTime be accounted since function begin (true) or since script begin (false)
-	local sleepTime="${9:-.5}"			# Seconds between each state check. The shorter the value, the snappier ExecTasks will be, but as a tradeoff, more cpu power will be used (good values are between .05 and 1)
-	local keepLogging="${10:-1800}"			# Every keepLogging seconds, an alive message is logged. Setting this value to zero disables any alive logging
-	local spinner="${11:-true}"			# Show spinner (true) or do not show anything (false) while running
-	local noTimeErrorLog="${12:-false}"		# Log errors when reaching soft / hard execution times (false) or do not log errors on those triggers (true)
-	local noErrorLogsAtAll="${13:-false}"		# Do not log any errros at all (useful for recursive ExecTasks checks)
+	local id="${2:-(undisclosed)}"        # Optional ID in order to identify global variables from this run (only bash variable names, no '-'). Global variables are WAIT_FOR_TASK_COMPLETION_$id and HARD_MAX_EXEC_TIME_REACHED_$id
+	local readFromFile="${3:-false}"      # Is mainInput / auxInput a semicolon separated list (true) or a filepath (false)
+	local softPerProcessTime="${4:-0}"    # Max time (in seconds) a pid or command can run before a warning is logged, unless set to 0
+	local hardPerProcessTime="${5:-0}"    # Max time (in seconds) a pid or command can run before the given command / pid is stopped, unless set to 0
+	local softMaxTime="${6:-0}"           # Max time (in seconds) for the whole function to run before a warning is logged, unless set to 0
+	local hardMaxTime="${7:-0}"           # Max time (in seconds) for the whole function to run before all pids / commands given are stopped, unless set to 0
+	local counting="${8:-true}"           # Should softMaxTime and hardMaxTime be accounted since function begin (true) or since script begin (false)
+	local sleepTime="${9:-.5}"            # Seconds between each state check. The shorter the value, the snappier ExecTasks will be, but as a tradeoff, more cpu power will be used (good values are between .05 and 1)
+	local keepLogging="${10:-1800}"       # Every keepLogging seconds, an alive message is logged. Setting this value to zero disables any alive logging
+	local spinner="${11:-true}"           # Show spinner (true) or do not show anything (false) while running
+	local noTimeErrorLog="${12:-false}"   # Log errors when reaching soft / hard execution times (false) or do not log errors on those triggers (true)
+	local noErrorLogsAtAll="${13:-false}" # Do not log any errros at all (useful for recursive ExecTasks checks)
 
 	# Parallelism specific arguments
-	local numberOfProcesses="${14:-0}"		# Number of simulanteous commands to run, given as mainInput. Set to 0 by default (WaitForTaskCompletion mode). Setting this value enables ParallelExec mode.
-	local auxInput="${15}"				# Contains list of commands separated by semicolons or filepath fo list of commands. Exit code of those commands decide whether main commands will be executed or not
-	local maxPostponeRetries="${16:-3}"		# If a conditional command fails, how many times shall we try to postpone the associated main command. Set this to 0 to disable postponing
-	local minTimeBetweenRetries="${17:-300}"	# Time (in seconds) between postponed command retries
-	local validExitCodes="${18:-0}"			# Semi colon separated list of valid main command exit codes which will not trigger errors
-
+	local numberOfProcesses="${14:-0}"       # Number of simulanteous commands to run, given as mainInput. Set to 0 by default (WaitForTaskCompletion mode). Setting this value enables ParallelExec mode.
+	local auxInput="${15}"                   # Contains list of commands separated by semicolons or filepath fo list of commands. Exit code of those commands decide whether main commands will be executed or not
+	local maxPostponeRetries="${16:-3}"      # If a conditional command fails, how many times shall we try to postpone the associated main command. Set this to 0 to disable postponing
+	local minTimeBetweenRetries="${17:-300}" # Time (in seconds) between postponed command retries
+	local validExitCodes="${18:-0}"          # Semi colon separated list of valid main command exit codes which will not trigger errors
 
 	local i
-
 
 	# Since ExecTasks takes up to 17 arguments, do a quick preflight check in DEBUG mode
 	if [ "$_DEBUG" == true ]; then
@@ -824,47 +820,47 @@ function ExecTasks {
 	fi
 
 	# Expand validExitCodes into array
-	IFS=';' read -r -a validExitCodes <<< "$validExitCodes"
+	IFS=';' read -r -a validExitCodes <<<"$validExitCodes"
 
 	# ParallelExec specific variables
-	local auxItemCount=0		# Number of conditional commands
-	local commandsArray=()		# Array containing commands
+	local auxItemCount=0            # Number of conditional commands
+	local commandsArray=()          # Array containing commands
 	local commandsConditionArray=() # Array containing conditional commands
-	local currentCommand		# Variable containing currently processed command
-	local currentCommandCondition	# Variable containing currently processed conditional command
-	local commandsArrayPid=()	# Array containing commands indexed by pids
-	local commandsArrayOutput=()	# Array containing command results indexed by pids
-	local postponedRetryCount=0	# Number of current postponed commands retries
-	local postponedItemCount=0	# Number of commands that have been postponed (keep at least one in order to check once)
+	local currentCommand            # Variable containing currently processed command
+	local currentCommandCondition   # Variable containing currently processed conditional command
+	local commandsArrayPid=()       # Array containing commands indexed by pids
+	local commandsArrayOutput=()    # Array containing command results indexed by pids
+	local postponedRetryCount=0     # Number of current postponed commands retries
+	local postponedItemCount=0      # Number of commands that have been postponed (keep at least one in order to check once)
 	local postponedCounter=0
-	local isPostponedCommand=false	# Is the current command from a postponed file ?
-	local postponedExecTime=0	# How much time has passed since last postponed condition was checked
-	local needsPostponing		# Does currentCommand need to be postponed
+	local isPostponedCommand=false # Is the current command from a postponed file ?
+	local postponedExecTime=0      # How much time has passed since last postponed condition was checked
+	local needsPostponing          # Does currentCommand need to be postponed
 	local temp
 
 	# Common variables
-	local pid			# Current pid working on
-	local pidState			# State of the process
-	local mainItemCount=0		# number of given items (pids or commands)
-	local readFromFile		# Should we read pids / commands from a file (true)
+	local pid             # Current pid working on
+	local pidState        # State of the process
+	local mainItemCount=0 # number of given items (pids or commands)
+	local readFromFile    # Should we read pids / commands from a file (true)
 	local counter=0
-	local log_ttime=0		# local time instance for comparaison
+	local log_ttime=0 # local time instance for comparaison
 
-	local seconds_begin=$SECONDS	# Seconds since the beginning of the script
-	local exec_time=0		# Seconds since the beginning of this function
+	local seconds_begin=$SECONDS # Seconds since the beginning of the script
+	local exec_time=0            # Seconds since the beginning of this function
 
-	local retval=0			# return value of monitored pid process
-	local subRetval=0		# return value of condition commands
-	local errorcount=0		# Number of pids that finished with errors
-	local pidsArray			# Array of currently running pids
-	local newPidsArray		# New array of currently running pids for next iteration
-	local pidsTimeArray		# Array containing execution begin time of pids
-	local executeCommand		# Boolean to check if currentCommand can be executed given a condition
+	local retval=0       # return value of monitored pid process
+	local subRetval=0    # return value of condition commands
+	local errorcount=0   # Number of pids that finished with errors
+	local pidsArray      # Array of currently running pids
+	local newPidsArray   # New array of currently running pids for next iteration
+	local pidsTimeArray  # Array containing execution begin time of pids
+	local executeCommand # Boolean to check if currentCommand can be executed given a condition
 	local functionMode
-	local softAlert=false		# Does a soft alert need to be triggered, if yes, send an alert once
-	local failedPidsList		# List containing failed pids with exit code separated by semicolons (eg : 2355:1;4534:2;2354:3)
-	local randomOutputName		# Random filename for command outputs
-	local currentRunningPids	# String of pids running, used for debugging purposes only
+	local softAlert=false    # Does a soft alert need to be triggered, if yes, send an alert once
+	local failedPidsList     # List containing failed pids with exit code separated by semicolons (eg : 2355:1;4534:2;2354:3)
+	local randomOutputName   # Random filename for command outputs
+	local currentRunningPids # String of pids running, used for debugging purposes only
 
 	# Initialise global variable
 	eval "WAIT_FOR_TASK_COMPLETION_$id=\"\""
@@ -880,24 +876,24 @@ function ExecTasks {
 
 	if [ $readFromFile == false ]; then
 		if [ $functionMode == "WaitForTaskCompletion" ]; then
-			IFS=';' read -r -a pidsArray <<< "$mainInput"
+			IFS=';' read -r -a pidsArray <<<"$mainInput"
 			mainItemCount="${#pidsArray[@]}"
 		else
-			IFS=';' read -r -a commandsArray <<< "$mainInput"
+			IFS=';' read -r -a commandsArray <<<"$mainInput"
 			mainItemCount="${#commandsArray[@]}"
-			IFS=';' read -r -a commandsConditionArray <<< "$auxInput"
+			IFS=';' read -r -a commandsConditionArray <<<"$auxInput"
 			auxItemCount="${#commandsConditionArray[@]}"
 		fi
 	else
 		if [ -f "$mainInput" ]; then
-			mainItemCount=$(wc -l < "$mainInput")
+			mainItemCount=$(wc -l <"$mainInput")
 			readFromFile=true
 		else
 			Logger "Cannot read main file [$mainInput]." "WARN"
 		fi
 		if [ "$auxInput" != "" ]; then
 			if [ -f "$auxInput" ]; then
-				auxItemCount=$(wc -l < "$auxInput")
+				auxItemCount=$(wc -l <"$auxInput")
 			else
 				Logger "Cannot read aux file [$auxInput]." "WARN"
 			fi
@@ -909,10 +905,9 @@ function ExecTasks {
 		counter=$mainItemCount
 	fi
 
-
 	# soft / hard execution time checks that needs to be a subfunction since it is called both from main loop and from parallelExec sub loop
 	function _ExecTasksTimeCheck {
-		if [ $spinner == true ]; then
+		if [ $spinner == true ] && [ "$_OFUNCTIONS_SHOW_SPINNER" != false ]; then
 			Spinner
 		fi
 		if [ $counting == true ]; then
@@ -925,7 +920,7 @@ function ExecTasks {
 			# This log solely exists for readability purposes before having next set of logs
 			if [ ${#pidsArray[@]} -eq $numberOfProcesses ] && [ $log_ttime -eq 0 ]; then
 				log_ttime=$exec_time
-				Logger "There are $((mainItemCount-counter+postponedItemCount)) / $mainItemCount tasks in the queue of which $postponedItemCount are postponed. Currently, ${#pidsArray[@]} tasks running with pids [$(joinString , ${pidsArray[@]})]." "NOTICE"
+				Logger "There are $((mainItemCount - counter + postponedItemCount)) / $mainItemCount tasks in the queue of which $postponedItemCount are postponed. Currently, ${#pidsArray[@]} tasks running with pids [$(joinString , ${pidsArray[@]})]." "NOTICE"
 			fi
 			if [ $(((exec_time + 1) % keepLogging)) -eq 0 ]; then
 				if [ $log_ttime -ne $exec_time ]; then # Fix when sleep time lower than 1 second
@@ -933,7 +928,7 @@ function ExecTasks {
 					if [ $functionMode == "WaitForTaskCompletion" ]; then
 						Logger "Current tasks ID=$id still running with pids [$(joinString , ${pidsArray[@]})]." "NOTICE"
 					elif [ $functionMode == "ParallelExec" ]; then
-						Logger "There are $((mainItemCount-counter+postponedItemCount)) / $mainItemCount tasks in the queue of which $postponedItemCount are postponed. Currently, ${#pidsArray[@]} tasks running with pids [$(joinString , ${pidsArray[@]})]." "NOTICE"
+						Logger "There are $((mainItemCount - counter + postponedItemCount)) / $mainItemCount tasks in the queue of which $postponedItemCount are postponed. Currently, ${#pidsArray[@]} tasks running with pids [$(joinString , ${pidsArray[@]})]." "NOTICE"
 					fi
 				fi
 			fi
@@ -960,7 +955,7 @@ function ExecTasks {
 						Logger "Could not stop task with pid [$pid]." "ERROR"
 					fi
 				fi
-				errorcount=$((errorcount+1))
+				errorcount=$((errorcount + 1))
 			done
 			if [ $noTimeErrorLog != true ]; then
 				SendAlert true
@@ -984,7 +979,7 @@ function ExecTasks {
 
 		for pid in "${pidsArray[@]}"; do
 			if [ $(IsInteger $pid) -eq 1 ]; then
-				if kill -0 $pid > /dev/null 2>&1; then
+				if kill -0 $pid >/dev/null 2>&1; then
 					# Handle uninterruptible sleep state or zombies by ommiting them from running process array (How to kill that is already dead ? :)
 					pidState="$(eval $PROCESS_STATE_CMD)"
 					if [ "$pidState" != "D" ] && [ "$pidState" != "Z" ]; then
@@ -1002,7 +997,6 @@ function ExecTasks {
 							fi
 						fi
 
-
 						if [ ${pidsTimeArray[$pid]} -gt $hardPerProcessTime ] && [ $hardPerProcessTime -ne 0 ]; then
 							if [ $noTimeErrorLog != true ] && [ $noErrorLogsAtAll != true ]; then
 								Logger "Max hard execution time [$hardPerProcessTime] exceeded for pid [$pid]. Stopping command execution." "ERROR"
@@ -1012,13 +1006,13 @@ function ExecTasks {
 							fi
 							KillChilds $pid true
 							if [ $? -eq 0 ]; then
-								 Logger "Command with pid [$pid] stopped successfully." "NOTICE"
+								Logger "Command with pid [$pid] stopped successfully." "NOTICE"
 							else
 								if [ $noErrorLogsAtAll != true ]; then
-								Logger "Could not stop command with pid [$pid]." "ERROR"
+									Logger "Could not stop command with pid [$pid]." "ERROR"
 								fi
 							fi
-							errorcount=$((errorcount+1))
+							errorcount=$((errorcount + 1))
 
 							if [ $noTimeErrorLog != true ]; then
 								SendAlert true
@@ -1042,7 +1036,7 @@ function ExecTasks {
 								Logger "Truncated output:\n$(head -c16384 "${commandsArrayOutput[$pid]}")" "ERROR"
 							fi
 						fi
-						errorcount=$((errorcount+1))
+						errorcount=$((errorcount + 1))
 						# Welcome to variable variable bash hell
 						if [ "$failedPidsList" == "" ]; then
 							failedPidsList="$pid:$retval"
@@ -1067,14 +1061,13 @@ function ExecTasks {
 		# Trivial wait time for bash to not eat up all CPU
 		sleep $sleepTime
 
-
 	}
 
 	while [ ${#pidsArray[@]} -gt 0 ] || [ $counter -lt $mainItemCount ] || [ $postponedItemCount -ne 0 ]; do
 		_ExecTasksTimeCheck
 		retval=$?
 		if [ $retval -ne 0 ]; then
-			return $retval;
+			return $retval
 		fi
 
 		# The following execution bloc is only needed in ParallelExec mode since WaitForTaskCompletion does not execute commands, but only monitors them
@@ -1083,7 +1076,7 @@ function ExecTasks {
 				_ExecTasksTimeCheck
 				retval=$?
 				if [ $retval -ne 0 ]; then
-					return $retval;
+					return $retval
 				fi
 
 				executeCommand=false
@@ -1094,15 +1087,15 @@ function ExecTasks {
 
 				if [ $readFromFile == true ]; then
 					# awk identifies first line as 1 instead of 0 so we need to increase counter
-					currentCommand=$(awk 'NR == num_line {print; exit}' num_line=$((counter+1)) "$mainInput")
+					currentCommand=$(awk 'NR == num_line {print; exit}' num_line=$((counter + 1)) "$mainInput")
 					if [ $auxItemCount -ne 0 ]; then
-						currentCommandCondition=$(awk 'NR == num_line {print; exit}' num_line=$((counter+1)) "$auxInput")
+						currentCommandCondition=$(awk 'NR == num_line {print; exit}' num_line=$((counter + 1)) "$auxInput")
 					fi
 
 					# Check if we need to fetch postponed commands
 					if [ "$currentCommand" == "" ]; then
-						currentCommand=$(awk 'NR == num_line {print; exit}' num_line=$((postponedCounter+1)) "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP")
-						currentCommandCondition=$(awk 'NR == num_line {print; exit}' num_line=$((postponedCounter+1)) "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP")
+						currentCommand=$(awk 'NR == num_line {print; exit}' num_line=$((postponedCounter + 1)) "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP")
+						currentCommandCondition=$(awk 'NR == num_line {print; exit}' num_line=$((postponedCounter + 1)) "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP")
 						isPostponedCommand=true
 					fi
 				else
@@ -1122,7 +1115,7 @@ function ExecTasks {
 				if [ $isPostponedCommand == true ]; then
 					# Get first value before '@'
 					postponedExecTime="${currentCommand%%@*}"
-					postponedExecTime=$((SECONDS-postponedExecTime))
+					postponedExecTime=$((SECONDS - postponedExecTime))
 					# Get everything after first '@'
 					temp="${currentCommand#*@}"
 					# Get first value before '@'
@@ -1131,9 +1124,9 @@ function ExecTasks {
 					currentCommand="${temp#*@}"
 
 					# Since we read a postponed command, we may decrase postponedItemCounter
-					postponedItemCount=$((postponedItemCount-1))
+					postponedItemCount=$((postponedItemCount - 1))
 					#Since we read one line, we need to increase the counter
-					postponedCounter=$((postponedCounter+1))
+					postponedCounter=$((postponedCounter + 1))
 
 				else
 					postponedRetryCount=0
@@ -1149,7 +1142,7 @@ function ExecTasks {
 							# is postponing enabled ?
 							if [ $maxPostponeRetries -gt 0 ]; then
 								Logger "Condition [$currentCommandCondition] not met for command [$currentCommand]. Exit code [$subRetval]. Postponing command." "NOTICE"
-								postponedRetryCount=$((postponedRetryCount+1))
+								postponedRetryCount=$((postponedRetryCount + 1))
 								if [ $postponedRetryCount -ge $maxPostponeRetries ]; then
 									Logger "Max retries reached for postponed command [$currentCommand]. Skipping command." "NOTICE"
 								else
@@ -1170,12 +1163,12 @@ function ExecTasks {
 				fi
 
 				if [ $needsPostponing == true ]; then
-					postponedItemCount=$((postponedItemCount+1))
+					postponedItemCount=$((postponedItemCount + 1))
 					if [ $readFromFile == true ]; then
-						echo "$((SECONDS-postponedExecTime))@$postponedRetryCount@$currentCommand" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP"
-						echo "$currentCommandCondition" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP"
+						echo "$((SECONDS - postponedExecTime))@$postponedRetryCount@$currentCommand" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP"
+						echo "$currentCommandCondition" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP"
 					else
-						postponedCommandsArray+=("$((SECONDS-postponedExecTime))@$postponedRetryCount@$currentCommand")
+						postponedCommandsArray+=("$((SECONDS - postponedExecTime))@$postponedRetryCount@$currentCommand")
 						postponedCommandsConditionArray+=("$currentCommandCondition")
 					fi
 				fi
@@ -1183,7 +1176,7 @@ function ExecTasks {
 				if [ $executeCommand == true ]; then
 					Logger "Running command [$currentCommand]." "DEBUG"
 					randomOutputName=$(date '+%Y%m%dT%H%M%S').$(PoorMansRandomGenerator 5)
-					eval "$currentCommand" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" 2>&1 &
+					eval "$currentCommand" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" 2>&1 &
 					pid=$!
 					pidsArray+=($pid)
 					commandsArrayPid[$pid]="$currentCommand"
@@ -1195,15 +1188,14 @@ function ExecTasks {
 				fi
 
 				if [ $isPostponedCommand == false ]; then
-					counter=$((counter+1))
+					counter=$((counter + 1))
 				fi
 				_ExecTasksPidsCheck
 			done
 		fi
 
-	_ExecTasksPidsCheck
+		_ExecTasksPidsCheck
 	done
-
 
 	# Return exit code if only one process was monitored, else return number of errors
 	# As we cannot return multiple values, a global variable WAIT_FOR_TASK_COMPLETION contains all pids with their return value
@@ -1212,9 +1204,9 @@ function ExecTasks {
 
 	# CleanUp ExecTasks temp files
 	if [ "$_DEBUG" != true ]; then
-		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" > /dev/null 2>&1
-		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP" > /dev/null 2>&1
-		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP" > /dev/null 2>&1
+		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$id.$randomOutputName.$SCRIPT_PID.$TSTAMP" >/dev/null 2>&1
+		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedMain.$id.$SCRIPT_PID.$TSTAMP" >/dev/null 2>&1
+		[ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP" ] && rm -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-postponedAux.$id.$SCRIPT_PID.$TSTAMP" >/dev/null 2>&1
 	fi
 
 	if [ $mainItemCount -eq 1 ]; then
@@ -1266,8 +1258,8 @@ function EscapeDoubleQuotes {
 function IsNumeric {
 	local value="${1}"
 
-	if type expr > /dev/null 2>&1; then
-		expr "$value" : '^[-+]\{0,1\}[0-9]*\.\{0,1\}[0-9]\{1,\}$' > /dev/null 2>&1
+	if type expr >/dev/null 2>&1; then
+		expr "$value" : '^[-+]\{0,1\}[0-9]*\.\{0,1\}[0-9]\{1,\}$' >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			echo 1
 		else
@@ -1300,10 +1292,10 @@ function HumanToNumeric {
 
 	notation=(K M G T P E)
 	for suffix in "${notation[@]}"; do
-		multiplier=$((multiplier+1))
+		multiplier=$((multiplier + 1))
 		if [[ "$value" == *"$suffix"* ]]; then
 			suffixPresent=$suffix
-			break;
+			break
 		fi
 	done
 
@@ -1311,7 +1303,7 @@ function HumanToNumeric {
 		value=${value%$suffix*}
 		value=${value%.*}
 		# /1024 since we convert to kilobytes instead of bytes
-		value=$((value*(1024**multiplier/1024)))
+		value=$((value * (1024 ** multiplier / 1024)))
 	else
 		value=${value%.*}
 	fi
@@ -1338,13 +1330,13 @@ function UrlEncode {
 	local i
 
 	local LANG=C
-	for i in $(seq 0 $((length-1))); do
+	for i in $(seq 0 $((length - 1))); do
 		local c="${1:i:1}"
 		case $c in
-			[a-zA-Z0-9.~_-])
+		[a-zA-Z0-9.~_-])
 			printf "$c"
 			;;
-			*)
+		*)
 			printf '%%%02X' "'$c"
 			;;
 		esac
@@ -1359,7 +1351,7 @@ function UrlDecode {
 
 ## Modified version of http://stackoverflow.com/a/8574392
 ## Usage: [ $(ArrayContains "needle" "${haystack[@]}") -eq 1 ]
-function ArrayContains () {
+function ArrayContains() {
 	local needle="${1}"
 	local haystack="${2}"
 	local e
@@ -1382,13 +1374,13 @@ function GetLocalOS {
 	local localOsVer
 
 	# There is no good way to tell if currently running in BusyBox shell. Using sluggish way.
-	if ls --help 2>&1 | grep -i "BusyBox" > /dev/null; then
+	if ls --help 2>&1 | grep -i "BusyBox" >/dev/null; then
 		localOsVar="BusyBox"
-	elif set -o | grep "winxp" > /dev/null; then
+	elif set -o | grep "winxp" >/dev/null; then
 		localOsVar="BusyBox-w32"
 	else
 		# Detecting the special ubuntu userland in Windows 10 bash
-		if grep -i Microsoft /proc/sys/kernel/osrelease > /dev/null 2>&1; then
+		if grep -i Microsoft /proc/sys/kernel/osrelease >/dev/null 2>&1; then
 			localOsVar="Microsoft"
 		else
 			localOsVar="$(uname -spior 2>&1)"
@@ -1402,35 +1394,35 @@ function GetLocalOS {
 	fi
 
 	case $localOsVar in
-		# Android uname contains both linux and android, keep it before linux entry
-		*"Android"*)
+	# Android uname contains both linux and android, keep it before linux entry
+	*"Android"*)
 		LOCAL_OS="Android"
 		;;
-		*"qnap"*)
+	*"qnap"*)
 		LOCAL_OS="Qnap"
 		;;
-		*"Linux"*)
+	*"Linux"*)
 		LOCAL_OS="Linux"
 		;;
-		*"BSD"*)
+	*"BSD"*)
 		LOCAL_OS="BSD"
 		;;
-		*"MINGW32"*|*"MINGW64"*|*"MSYS"*)
+	*"MINGW32"* | *"MINGW64"* | *"MSYS"*)
 		LOCAL_OS="msys"
 		;;
-		*"CYGWIN"*)
+	*"CYGWIN"*)
 		LOCAL_OS="Cygwin"
 		;;
-		*"Microsoft"*|*"MS/Windows"*)
+	*"Microsoft"* | *"MS/Windows"*)
 		LOCAL_OS="WinNT10"
 		;;
-		*"Darwin"*)
+	*"Darwin"*)
 		LOCAL_OS="MacOSX"
 		;;
-		*"BusyBox"*)
+	*"BusyBox"*)
 		LOCAL_OS="BusyBox"
 		;;
-		*)
+	*)
 		if [ "$IGNORE_OS_TYPE" == true ]; then
 			Logger "Running on unknown local OS [$localOsVar]." "WARN"
 			return
@@ -1470,7 +1462,7 @@ function GetLocalOS {
 	fi
 
 	if [ "$LOCAL_OS_FAMILY" == "Unix" ]; then
-		if uname -m | grep '64' > /dev/null 2>&1; then
+		if uname -m | grep '64' >/dev/null 2>&1; then
 			LOCAL_OS_BITNESS=64
 		else
 			LOCAL_OS_BITNESS=32
@@ -1484,8 +1476,6 @@ function GetLocalOS {
 	fi
 }
 
-
-
 function GetRemoteOS {
 
 	if [ "$REMOTE_OPERATION" != true ]; then
@@ -1494,7 +1484,7 @@ function GetRemoteOS {
 
 	local remoteOsVar
 
-$SSH_CMD env LC_ALL=C env _REMOTE_TOKEN="$_REMOTE_TOKEN" bash -s << 'ENDSSH' >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2>&1
+	$SSH_CMD env LC_ALL=C env _REMOTE_TOKEN="$_REMOTE_TOKEN" bash -s <<'ENDSSH' >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 
 function GetOs {
@@ -1572,49 +1562,49 @@ ENDSSH
 		exit 1
 	fi
 
-
 	if [ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" ]; then
 		remoteOsVar="$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP")"
 		case $remoteOsVar in
-			*"Android"*)
+		*"Android"*)
 			REMOTE_OS="Android"
 			;;
-			*"qnap"*)
+		*"qnap"*)
 			REMOTE_OS="Qnap"
 			;;
-			*"Linux"*)
+		*"Linux"*)
 			REMOTE_OS="Linux"
 			;;
-			*"BSD"*)
+		*"BSD"*)
 			REMOTE_OS="BSD"
 			;;
-			*"MINGW32"*|*"MINGW64"*|*"MSYS"*)
+		*"MINGW32"* | *"MINGW64"* | *"MSYS"*)
 			REMOTE_OS="msys"
 			;;
-			*"CYGWIN"*)
+		*"CYGWIN"*)
 			REMOTE_OS="Cygwin"
 			;;
-			*"Microsoft"*)
+		*"Microsoft"*)
 			REMOTE_OS="WinNT10"
 			;;
-			*"Darwin"*)
+		*"Darwin"*)
 			REMOTE_OS="MacOSX"
 			;;
-			*"BusyBox"*)
+		*"BusyBox"*)
 			REMOTE_OS="BusyBox"
 			;;
-			*"ssh"*|*"SSH"*)
+		*"ssh"* | *"SSH"*)
 			Logger "Cannot connect to remote system." "CRITICAL"
 			exit 1
 			;;
-			*)
-			if [ "$IGNORE_OS_TYPE" == true ]; then		#DOC: Undocumented debug only setting
+		*)
+			if [ "$IGNORE_OS_TYPE" == true ]; then #DOC: Undocumented debug only setting
 				Logger "Running on unknown remote OS [$remoteOsVar]." "WARN"
 				return
 			fi
 			Logger "Running on remote OS failed. Please report to the author if the OS is not supported." "CRITICAL"
 			Logger "Remote OS said:\n$remoteOsVar" "CRITICAL"
 			exit 1
+			;;
 		esac
 		Logger "Remote OS: [$remoteOsVar]." "DEBUG"
 	else
@@ -1623,7 +1613,7 @@ ENDSSH
 }
 
 function RunLocalCommand {
-	local command="${1}" # Command to run
+	local command="${1}"     # Command to run
 	local hardMaxTime="${2}" # Max time to wait for command to compleet
 
 	if [ $_DRYRUN == true ]; then
@@ -1632,7 +1622,7 @@ function RunLocalCommand {
 	fi
 
 	Logger "Running command [$command] on local host." "NOTICE"
-	eval "$command" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2>&1 &
+	eval "$command" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2>&1 &
 
 	ExecTasks $! "${FUNCNAME[0]}" false 0 0 0 $hardMaxTime true $SLEEP_TIME $KEEP_LOGGING
 	retval=$?
@@ -1650,9 +1640,8 @@ function RunLocalCommand {
 
 ## Runs remote command $1 and waits for completition in $2 seconds
 function RunRemoteCommand {
-	local command="${1}" # Command to run
+	local command="${1}"     # Command to run
 	local hardMaxTime="${2}" # Max time to wait for command to compleet
-
 
 	if [ "$REMOTE_OPERATION" != true ]; then
 		Logger "Ignoring remote command [$command] because remote host is not configured." "WARN"
@@ -1670,7 +1659,7 @@ function RunRemoteCommand {
 	cmd=$SSH_CMD' "env LC_ALL=C env _REMOTE_TOKEN="'$_REMOTE_TOKEN'" $command" > "'$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP'" 2>&1'
 	Logger "cmd: $cmd" "DEBUG"
 	eval "$cmd" &
-	ExecTasks $! "${FUNCNAME[0]}" false  0 0 0 $hardMaxTime true $SLEEP_TIME $KEEP_LOGGING
+	ExecTasks $! "${FUNCNAME[0]}" false 0 0 0 $hardMaxTime true $SLEEP_TIME $KEEP_LOGGING
 	retval=$?
 	if [ $retval -eq 0 ]; then
 		Logger "Command succeded." "NOTICE"
@@ -1737,14 +1726,14 @@ function TimeCheck {
 	if [ -f "$timefile" ]; then
 		result=$(cat "$timefile")
 		tstamp=$(date +%s)
-		if [ $((tstamp-result)) -gt $deltatime ]; then
-			echo "$(date +%s)" > "$timefile"
+		if [ $((tstamp - result)) -gt $deltatime ]; then
+			echo "$(date +%s)" >"$timefile"
 			return 0
 		else
 			return 1
 		fi
 	else
-		echo "$(date +%s)" > "$timefile"
+		echo "$(date +%s)" >"$timefile"
 		return 0
 	fi
 }
@@ -1762,21 +1751,19 @@ function Ping {
 	return $?
 }
 
-
 function CheckConnectivityRemoteHost {
 
 	local retval
 
-
-		if [ "$REMOTE_HOST_PING" != false ] && [ "$REMOTE_OPERATION" != false ]; then
-			eval "$PING_CMD $REMOTE_HOST > /dev/null 2>&1" &
-			ExecTasks $! "${FUNCNAME[0]}" false 0 0 60 180 true $SLEEP_TIME $KEEP_LOGGING
-			retval=$?
-			if [ $retval -ne 0 ]; then
-				Logger "Cannot ping [$REMOTE_HOST]. Return code [$retval]." "WARN"
-				return $retval
-			fi
+	if [ "$REMOTE_HOST_PING" != false ] && [ "$REMOTE_OPERATION" != false ]; then
+		eval "$PING_CMD $REMOTE_HOST > /dev/null 2>&1" &
+		ExecTasks $! "${FUNCNAME[0]}" false 0 0 60 180 true $SLEEP_TIME $KEEP_LOGGING
+		retval=$?
+		if [ $retval -ne 0 ]; then
+			Logger "Cannot ping [$REMOTE_HOST]. Return code [$retval]." "WARN"
+			return $retval
 		fi
+	fi
 }
 
 function CheckConnectivity3rdPartyHosts {
@@ -1784,43 +1771,40 @@ function CheckConnectivity3rdPartyHosts {
 	# third_party_hosts_ips=('1.1.1.1' '8.8.8.8' 'kernel.org' 'google.com')
 	# CheckConnectivity3rdPartyHosts $third_party_hosts_ips
 
-
-	local remote_3rd_party_hosts="${1}"	# Optional list of hosts to check
+	local remote_3rd_party_hosts="${1}" # Optional list of hosts to check
 
 	local remote3rdPartySuccess
 	local retval
 	local i
 
-
-		if [ "$remote_3rd_party_hosts" == "" ]; then
-			remote_3rd_party_hosts="$REMOTE_3RD_PARTY_HOSTS"
-		fi
-		if [ "$remote_3rd_party_hosts" != "" ]; then
-			remote3rdPartySuccess=false
-			for i in $remote_3rd_party_hosts
-			do
-				eval "$PING_CMD $i > /dev/null 2>&1" &
-				ExecTasks $! "${FUNCNAME[0]}" false 0 0 60 180 true $SLEEP_TIME $KEEP_LOGGING
-				retval=$?
-				if [ $retval -ne 0 ]; then
-					Logger "Cannot ping 3rd party host [$i]. Return code [$retval]." "NOTICE"
-				else
-					remote3rdPartySuccess=true
-					break
-				fi
-			done
-
-			if [ $remote3rdPartySuccess == false ]; then
-				Logger "No remote 3rd party host responded to ping. No internet ?" "WARN"
-				return 1
+	if [ "$remote_3rd_party_hosts" == "" ]; then
+		remote_3rd_party_hosts="$REMOTE_3RD_PARTY_HOSTS"
+	fi
+	if [ "$remote_3rd_party_hosts" != "" ]; then
+		remote3rdPartySuccess=false
+		for i in $remote_3rd_party_hosts; do
+			eval "$PING_CMD $i > /dev/null 2>&1" &
+			ExecTasks $! "${FUNCNAME[0]}" false 0 0 60 180 true $SLEEP_TIME $KEEP_LOGGING
+			retval=$?
+			if [ $retval -ne 0 ]; then
+				Logger "Cannot ping 3rd party host [$i]. Return code [$retval]." "NOTICE"
 			else
-				return 0
+				remote3rdPartySuccess=true
+				break
 			fi
+		done
+
+		if [ $remote3rdPartySuccess == false ]; then
+			Logger "No remote 3rd party host responded to ping. No internet ?" "WARN"
+			return 1
+		else
+			return 0
 		fi
+	fi
 }
 
 function RsyncPatternsAdd {
-	local patternType="${1}"	# exclude or include
+	local patternType="${1}" # exclude or include
 	local pattern="${2}"
 
 	local rest
@@ -1828,8 +1812,7 @@ function RsyncPatternsAdd {
 	# Disable globbing so wildcards from exclusions do not get expanded
 	set -f
 	rest="$pattern"
-	while [ -n "$rest" ]
-	do
+	while [ -n "$rest" ]; do
 		# Take the string until first occurence until $PATH_SEPARATOR_CHAR
 		str="${rest%%$PATH_SEPARATOR_CHAR*}"
 		# Handle the last case
@@ -1839,7 +1822,7 @@ function RsyncPatternsAdd {
 			# Cut everything before the first occurence of $PATH_SEPARATOR_CHAR
 			rest="${rest#*$PATH_SEPARATOR_CHAR}"
 		fi
-			if [ "$RSYNC_PATTERNS" == "" ]; then
+		if [ "$RSYNC_PATTERNS" == "" ]; then
 			RSYNC_PATTERNS="--$patternType=\"$str\""
 		else
 			RSYNC_PATTERNS="$RSYNC_PATTERNS --$patternType=\"$str\""
@@ -1864,7 +1847,7 @@ function RsyncPatternsFromAdd {
 
 function RsyncPatterns {
 
-       if [ "$RSYNC_PATTERN_FIRST" == "exclude" ]; then
+	if [ "$RSYNC_PATTERN_FIRST" == "exclude" ]; then
 		if [ "$RSYNC_EXCLUDE_PATTERN" != "" ]; then
 			RsyncPatternsAdd "exclude" "$RSYNC_EXCLUDE_PATTERN"
 		fi
@@ -1976,8 +1959,7 @@ function SetCompression {
 	## Busybox fix (Termux xz command does not support compression at all)
 	if [ "$LOCAL_OS" == "BusyBox" ] || [ "$REMOTE_OS" == "Busybox" ] || [ "$LOCAL_OS" == "Android" ] || [ "$REMOTE_OS" == "Android" ]; then
 		compressionString=""
-		if type gzip > /dev/null 2>&1
-		then
+		if type gzip >/dev/null 2>&1; then
 			COMPRESSION_PROGRAM="| gzip -c$compressionString"
 			COMPRESSION_EXTENSION=.gz
 			# obackup specific
@@ -1988,22 +1970,18 @@ function SetCompression {
 	else
 		compressionString=" -$COMPRESSION_LEVEL"
 
-		if type xz > /dev/null 2>&1
-		then
+		if type xz >/dev/null 2>&1; then
 			COMPRESSION_PROGRAM="| xz -c$compressionString"
 			COMPRESSION_EXTENSION=.xz
-		elif type lzma > /dev/null 2>&1
-		then
+		elif type lzma >/dev/null 2>&1; then
 			COMPRESSION_PROGRAM="| lzma -c$compressionString"
 			COMPRESSION_EXTENSION=.lzma
-		elif type pigz > /dev/null 2>&1
-		then
+		elif type pigz >/dev/null 2>&1; then
 			COMPRESSION_PROGRAM="| pigz -c$compressionString"
 			COMPRESSION_EXTENSION=.gz
 			# obackup specific
 			COMPRESSION_OPTIONS=--rsyncable
-		elif type gzip > /dev/null 2>&1
-		then
+		elif type gzip >/dev/null 2>&1; then
 			COMPRESSION_PROGRAM="| gzip -c$compressionString"
 			COMPRESSION_EXTENSION=.gz
 			# obackup specific
@@ -2098,6 +2076,16 @@ function InitRemoteOSDependingSettings {
 
 	## Set rsync default arguments (complete with -r or -d depending on recursivity later)
 	RSYNC_DEFAULT_ARGS="-ltD -8"
+
+	## NPF-MOD: Regarding #242, we need to add --old-args if rsync > 3.2.3
+	#rsync_version=$("${RSYNC_EXECUTABLE}" --version 2>/dev/null| head -1 | awk '{print $3}')
+	#if [ $(VerComp $rsync_version 3.2.3) -eq 1 ]; then
+	#	RSYNC_DEFAULT_ARGS="$RSYNC_DEFAULT_ARGS --old-args"
+	#fi
+	# NPF-MOD: Strangely enough, also happens on RHEL7 rsync 3.1.1
+	# Let's resolve this easier
+	export RSYNC_OLD_ARGS=1
+
 	if [ "$_DRYRUN" == true ]; then
 		RSYNC_DRY_ARG="-n"
 		DRY_WARNING="/!\ DRY RUN "
@@ -2201,39 +2189,33 @@ function ParentPid {
 
 # Neat version compare function found at http://stackoverflow.com/a/4025065/2635443
 # Returns 0 if equal, 1 if $1 > $2 and 2 if $1 < $2
-function VerComp () {
+function VerComp() {
 	if [ "$1" == "" ] || [ "$2" == "" ]; then
 		Logger "Bogus Vercomp values [$1] and [$2]." "WARN"
 		return 1
 	fi
 
-	if [[ "$1" == "$2" ]]
-		then
-			echo 0
+	if [[ "$1" == "$2" ]]; then
+		echo 0
 		return
 	fi
 
 	local IFS=.
 	local i ver1=($1) ver2=($2)
 	# fill empty fields in ver1 with zeros
-	for ((i=${#ver1[@]}; i<${#ver2[@]}; i++))
-	do
+	for ((i = ${#ver1[@]}; i < ${#ver2[@]}; i++)); do
 		ver1[i]=0
 	done
-	for ((i=0; i<${#ver1[@]}; i++))
-	do
-		if [[ -z ${ver2[i]} ]]
-		then
+	for ((i = 0; i < ${#ver1[@]}; i++)); do
+		if [[ -z ${ver2[i]} ]]; then
 			# fill empty fields in ver2 with zeros
 			ver2[i]=0
 		fi
-		if ((10#${ver1[i]} > 10#${ver2[i]}))
-		then
+		if ((10#${ver1[i]} > 10#${ver2[i]})); then
 			echo 1
 			return
 		fi
-		if ((10#${ver1[i]} < 10#${ver2[i]}))
-		then
+		if ((10#${ver1[i]} < 10#${ver2[i]})); then
 			echo 2
 			return
 		fi
@@ -2243,7 +2225,7 @@ function VerComp () {
 	return
 }
 
-function GetConfFileValue () {
+function GetConfFileValue() {
 	local file="${1}"
 	local name="${2}"
 	local noError="${3:-false}"
@@ -2263,15 +2245,14 @@ function GetConfFileValue () {
 	fi
 }
 
-
-function SetConfFileValue () {
+function SetConfFileValue() {
 	local file="${1}"
 	local name="${2}"
 	local value="${3}"
 	local separator="${4:-#}"
 
 	if [ -f "$file" ]; then
-		if grep "^$name=" "$file" > /dev/null 2>&1; then
+		if grep "^$name=" "$file" >/dev/null 2>&1; then
 			# Using -i.tmp for BSD compat
 			sed -i.tmp "s$separator^$name=.*$separator$name=$value$separator" "$file"
 			if [ $? -ne 0 ]; then
@@ -2280,13 +2261,13 @@ function SetConfFileValue () {
 			rm -f "$file.tmp"
 			Logger "Set [$name] to [$value] in config file [$file]." "DEBUG"
 		else
-			echo "$name=$value" >> "$file"
+			echo "$name=$value" >>"$file"
 			if [ $? -ne 0 ]; then
 				Logger "Cannot create value [$name] to [$value] in config file [$file]." "ERROR"
 			fi
 		fi
 	else
-		echo "$name=$value" > "$file"
+		echo "$name=$value" >"$file"
 		if [ $? -ne 0 ]; then
 			Logger "Config file [$file] does not exist. Failed to create it witn value [$name]." "ERROR"
 		fi
@@ -2295,7 +2276,7 @@ function SetConfFileValue () {
 
 # Function can replace [ -f /some/file* ] tests
 # Modified version of http://stackoverflow.com/a/6364244/2635443
-function WildcardFileExists () {
+function WildcardFileExists() {
 	local file="${1}"
 	local exists=0
 
@@ -2318,7 +2299,7 @@ function WildcardFileExists () {
 
 # Some MacOS versions might loose file ownsership when using mv from /tmp dir (see #175)
 # This is a "mv" function wrapper that helps out with macOS
-function FileMove () {
+function FileMove() {
 	local source="${1}"
 	local dest="${2}"
 
@@ -2340,19 +2321,19 @@ function FileMove () {
 # Checks directories every second for file changes using a static list
 # Orignal code Copyright (c) 2020 Francesco Bianco <bianco@javanile.org>
 # Improved version https://github.com/javanile/inotifywait-polling/pull/1 by adding timeouts, optional recursion, excludes and a couple of fixes
-print_event () {
-    [[ -z "${events}" || "${events}" == *"$2"* ]] && echo "$1 $2 $3"
-    case "$2" in
-        CREATE)
-            [[ -z "${events}" || "${events}" == *"OPEN"* ]] && echo "$1 OPEN $3"
-            [[ -z "${events}" || "${events}" == *"MODIFY"* ]] && echo "$1 MODIFY $3"
-            [[ -z "${events}" || "${events}" == *"CLOSE"* ]] && echo "$1 CLOSE_WRITE,CLOSE $3"
-            ;;
-    esac
-    return 0
+print_event() {
+	[[ -z "${events}" || "${events}" == *"$2"* ]] && echo "$1 $2 $3"
+	case "$2" in
+	CREATE)
+		[[ -z "${events}" || "${events}" == *"OPEN"* ]] && echo "$1 OPEN $3"
+		[[ -z "${events}" || "${events}" == *"MODIFY"* ]] && echo "$1 MODIFY $3"
+		[[ -z "${events}" || "${events}" == *"CLOSE"* ]] && echo "$1 CLOSE_WRITE,CLOSE $3"
+		;;
+	esac
+	return 0
 }
 
-function _InotifyWaitPoller () {
+function _InotifyWaitPoller() {
 	local path="${1}"
 	local includes="${2}"
 	local excludes="${3}"
@@ -2374,12 +2355,12 @@ function _InotifyWaitPoller () {
 
 	find_results_file="$RUN_DIR/$PROGRAM._InotifyWaitPoller.${path//\//_}.$SCRIPT_PID.$TSTAMP"
 
-	IFS=';' read -r -a includes <<< "$includes"
+	IFS=';' read -r -a includes <<<"$includes"
 	for include in "${includes[@]}"; do
 		find_includes="$find_includes -iregex \"$include\""
 	done
 
-	IFS=';' read -r -a excludes <<< "$excludes"
+	IFS=';' read -r -a excludes <<<"$excludes"
 	for exclude in "${excludes[@]}"; do
 		find_excludes="$find_excludes ! -iregex \"$exclude\""
 	done
@@ -2392,7 +2373,7 @@ function _InotifyWaitPoller () {
 
 	find_cmd="find \"$path\" ! -regex \"$RUN_DIR/$PROGRAM.*.$SCRIPT_PID.$TSTAMP\" $find_includes $find_excludes $find_recursion -printf \"%s %y %p\\n\" | sort -k3 - > \"$find_results_file\""
 	Logger "COMMAND: $find_cmd" "VERBOSE"
-        eval "$find_cmd"
+	eval "$find_cmd"
 
 	while [ $stop_loop == false ]; do
 		sleep "$interval"
@@ -2413,10 +2394,10 @@ function _InotifyWaitPoller () {
 					dir="$(dirname "${focus}")/"
 					file="$(basename "${focus}" | cut -d';' -f1)"
 					if [[ "${events}" == *"${event}"* ]]; then
-						[ "$event_log_file" != "" ] && printf "${dir}${file}\0" >> "$event_log_file" || print_event "${dir}" "${event}" "${file}"
+						[ "$event_log_file" != "" ] && printf "${dir}${file}\0" >>"$event_log_file" || print_event "${dir}" "${event}" "${file}"
 						notable_event=true
 					fi
-				done <<< "${sign}"
+				done <<<"${sign}"
 				break
 			fi
 			flag="$(echo "${line}" | cut -s -d' ' -f1)"
@@ -2424,44 +2405,44 @@ function _InotifyWaitPoller () {
 			[[ -n "${file}" ]] || continue
 			[[ "${file}" != "$find_results_file" ]] || continue
 			case "${flag}" in
-				"<")
-					event=DELETE
-					;;
-				">")
-					event=CREATE
-					if [[ "${sign}" == *"DELETE:${file};"* ]]; then
-						event=MODIFY
-						sign="$(echo "${sign}" | sed "s#DELETE:${file};##g")"
-					elif [[ "${sign}" == *"DELETE:"* ]]; then
-						event=MOVED_TO
-						sign="$(echo "${sign}" | sed "s#DELETE:.*;##g")"
-					fi
-					;;
+			"<")
+				event=DELETE
+				;;
+			">")
+				event=CREATE
+				if [[ "${sign}" == *"DELETE:${file};"* ]]; then
+					event=MODIFY
+					sign="$(echo "${sign}" | sed "s#DELETE:${file};##g")"
+				elif [[ "${sign}" == *"DELETE:"* ]]; then
+					event=MOVED_TO
+					sign="$(echo "${sign}" | sed "s#DELETE:.*;##g")"
+				fi
+				;;
 			esac
 			sign+="${event}:${file};"
-		done <<< "$(echo -e "${differences}\n.")"
+		done <<<"$(echo -e "${differences}\n.")"
 	done
 	[ -f "$find_results_file" ] && rm -f "$find_results_file"
 	exit 0
 }
 # InotifyWaitPoller dirs exclusions recursive monitor_mode timeout opt_regex event_log events
-function InotifyWaitPoller () {
+function InotifyWaitPoller() {
 	local paths="${1}" # Comma separated list of paths
 	local includes="${2}" comma separated list of excludes in find regex format
 	local excludes="${3}" # Comma separated list of excludes in find regex format
-        local recursive="${4:-true}"
+	local recursive="${4:-true}"
 	local monitor="${5:-false}"
-	local event_log_file="${6}" # optional event log file
+	local event_log_file="${6}"                 # optional event log file
 	local events="${7:-CREATE,MODIFY,MOVED_TO}" # possible events: CREATE,OPEN,MODIFY,CLOSE,CLOSE_WRITE,DELETE,MOVED_TO
-	local timeout="${8:-0}" # seconds
-	local interval="${9:-5}" # polling interval
+	local timeout="${8:-0}"                     # seconds
+	local interval="${9:-5}"                    # polling interval
 
 	local pids=
 	local path
 	local alive
 	local count=0
 
-	IFS=';' read -r -a paths <<< "$paths"
+	IFS=';' read -r -a paths <<<"$paths"
 	for path in "${paths[@]}"; do
 		if ! [ -e "$path" ]; then
 			Logger "Cannot watch [$path]. No such file or directory." "CRITICAL"
@@ -2483,6 +2464,7 @@ _OFUNCTIONS_BOOTSTRAP=true
 [ "$_OFUNCTIONS_BOOTSTRAP" != true ] && echo "Please use bootstrap.sh to load this dev version of $(basename $0) or build it with merge.sh" && exit 1
 
 _LOGGER_PREFIX="time"
+_LOGGER_WRITE_PARTIAL_LOGS=true
 
 ## Working directory. This directory exists in any replica and contains state files, backups, soft deleted files etc
 OSYNC_DIR=".osync_workdir"
@@ -2520,8 +2502,7 @@ function TrapQuit {
 			RunAfterHook
 		fi
 		Logger "$PROGRAM finished with errors." "ERROR"
-		if [ "$_DEBUG" != true ]
-		then
+		if [ "$_DEBUG" != true ]; then
 			SendAlert
 		else
 			Logger "Debug mode, no alert mail will be sent." "NOTICE"
@@ -2533,25 +2514,23 @@ function TrapQuit {
 			RunAfterHook
 		fi
 		Logger "$PROGRAM finished with warnings." "WARN"
-		if [ "$_DEBUG" != true ]
-		then
+		if [ "$_DEBUG" != true ]; then
 			SendAlert
 		else
 			Logger "Debug mode, no alert mail will be sent." "NOTICE"
 		fi
-		exitcode=2	# Warning exit code must not force daemon mode to quit
+		exitcode=2 # Warning exit code must not force daemon mode to quit
 	else
 		UnlockReplicas
 		RunAfterHook
 		Logger "$PROGRAM finished." "ALWAYS"
-		if [ "$ALWAYS_SEND_MAILS" == true ];
-		then
+		if [ "$ALWAYS_SEND_MAILS" == true ]; then
 			SendAlert
 		fi
 		exitcode=0
 	fi
 	CleanUp
-	KillChilds $SCRIPT_PID > /dev/null 2>&1
+	KillChilds $SCRIPT_PID >/dev/null 2>&1
 
 	exit $exitcode
 }
@@ -2559,39 +2538,39 @@ function TrapQuit {
 function CheckEnvironment {
 
 	if [ "$REMOTE_OPERATION" == true ]; then
-		if ! type ssh > /dev/null 2>&1 ; then
+		if ! type ssh >/dev/null 2>&1; then
 			Logger "ssh not present. Cannot start sync." "CRITICAL"
 			exit 1
 		fi
 
-		if [ "$SSH_PASSWORD_FILE" != "" ] && ! type sshpass > /dev/null 2>&1 ; then
+		if [ "$SSH_PASSWORD_FILE" != "" ] && ! type sshpass >/dev/null 2>&1; then
 			Logger "sshpass not present. Cannot use password authentication." "CRITICAL"
 			exit 1
 		fi
 	fi
 
-	if ! type rsync > /dev/null 2>&1 ; then
+	if ! type rsync >/dev/null 2>&1; then
 		Logger "rsync not present. Sync cannot start." "CRITICAL"
 		exit 1
 	fi
 
-	if ! type pgrep > /dev/null 2>&1 ; then
+	if ! type pgrep >/dev/null 2>&1; then
 		Logger "pgrep not present. Sync cannot start." "CRITICAL"
 		exit 1
 	fi
 
-	if ! type sort > /dev/null 2>&1 ; then
+	if ! type sort >/dev/null 2>&1; then
 		Logger "sort not present. Sync cannot start." "CRITICAL"
 		exit 1
 	fi
 
-	if ! type uniq > /dev/null 2>&1 ; then
+	if ! type uniq >/dev/null 2>&1; then
 		Logger "uniq not present. Sync cannot start." "CRITICAL"
 		exit 1
 	fi
 
 	if [ "$SUDO_EXEC" == true ]; then
-		if ! type sudo > /dev/null 2>&1 ; then
+		if ! type sudo >/dev/null 2>&1; then
 			Logger "sudo not present. Sync cannot start." "CRITICAL"
 			exit 1
 		fi
@@ -2605,7 +2584,6 @@ function CheckCurrentConfig {
 	local test
 	local booleans
 	local num_vars
-
 
 	# Full check is for initiator driven runs
 	if [ $fullCheck == true ]; then
@@ -2672,7 +2650,7 @@ function CheckCurrentConfigAll {
 
 	if [ "$SKIP_DELETION" != "" ]; then
 		tmp="$SKIP_DELETION"
-		IFS=',' read -r -a SKIP_DELETION <<< "$tmp"
+		IFS=',' read -r -a SKIP_DELETION <<<"$tmp"
 		if [ $(ArrayContains "${INITIATOR[$__type]}" "${SKIP_DELETION[@]}") -eq 0 ] && [ $(ArrayContains "${TARGET[$__type]}" "${SKIP_DELETION[@]}") -eq 0 ]; then
 			Logger "Bogus skip deletion parameter [${SKIP_DELETION[@]}]." "CRITICAL"
 			exit 1
@@ -2694,13 +2672,12 @@ function _CheckReplicasLocal {
 	local replicaType="${2}"
 	local stateDir="${3}"
 
-
 	local retval
 	local diskSpace
 
 	if [ ! -d "$replicaPath" ]; then
 		if [ "$CREATE_DIRS" == true ]; then
-			mkdir -p "$replicaPath" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+			mkdir -p "$replicaPath" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 			retval=$?
 			if [ $retval -ne 0 ]; then
 				Logger "Cannot create local replica path [$replicaPath]." "CRITICAL" $retval
@@ -2716,7 +2693,7 @@ function _CheckReplicasLocal {
 	fi
 
 	if [ ! -d "$replicaPath/$OSYNC_DIR" ]; then
-		mkdir -p "$replicaPath/$OSYNC_DIR" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+		mkdir -p "$replicaPath/$OSYNC_DIR" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot create local replica osync path [$replicaPath/$OSYNC_DIR]." "CRITICAL" $retval
@@ -2728,7 +2705,7 @@ function _CheckReplicasLocal {
 	fi
 
 	if [ ! -d "$stateDir" ]; then
-		mkdir -p "$stateDir" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+		mkdir -p "$stateDir" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot create local replica state dir [$stateDir]." "CRITICAL" $retval
@@ -2770,19 +2747,18 @@ function _CheckReplicasRemote {
 	local replicaType="${2}"
 	local stateDir="${3}"
 
-
 	local retval
 	local cmd
 
 	CheckConnectivity3rdPartyHosts
 	CheckConnectivityRemoteHost
 
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env replicaPath="'$replicaPath'" env stateDir="'$stateDir'" env isCustomStateDir="'$isCustomStateDir'" env CREATE_DIRS="'$CREATE_DIRS'" env DF_CMD="'$DF_CMD'" env MINIMUM_SPACE="'$MINIMUM_SPACE'" \
-env OSYNC_DIR="'$OSYNC_DIR'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env replicaPath="'$replicaPath'" env stateDir="'$stateDir'" env isCustomStateDir="'$isCustomStateDir'" env CREATE_DIRS="'$CREATE_DIRS'" env DF_CMD="'$DF_CMD'" env MINIMUM_SPACE="'$MINIMUM_SPACE'" \
+		env OSYNC_DIR="'$OSYNC_DIR'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -2889,7 +2865,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -3059,8 +3035,8 @@ ENDSSH
 	fi
 	if [ -s "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 		(
-		_LOGGER_PREFIX=""
-		Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "NOTICE"
+			_LOGGER_PREFIX=""
+			Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "NOTICE"
 		)
 	fi
 	if [ $retval -ne 0 ]; then
@@ -3119,7 +3095,6 @@ function _HandleLocksLocal {
 	local replicaType="${3}"
 	local overwrite="${4:-false}"
 
-
 	local retval
 	local lockfileContent
 	local lockPid
@@ -3127,7 +3102,7 @@ function _HandleLocksLocal {
 	local writeLocks=false
 
 	if [ ! -d "$replicaStateDir" ]; then
-		mkdir -p "$replicaStateDir" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+		mkdir -p "$replicaStateDir" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot create state dir [$replicaStateDir]." "CRITICAL" $retval
@@ -3150,10 +3125,10 @@ function _HandleLocksLocal {
 			Logger "Invalid instance id [$lockInstanceID] in local replica." "CRITICAL"
 			return 1
 
-		Logger "Local $replicaType  lock is: [$lockPid@$lockInstanceID]." "DEBUG"
+			Logger "Local $replicaType  lock is: [$lockPid@$lockInstanceID]." "DEBUG"
 
 		fi
-		kill -0 $lockPid > /dev/null 2>&1
+		kill -0 $lockPid >/dev/null 2>&1
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "There is a local dead osync lock [$lockPid@$lockInstanceID] that is no longer running. Resuming." "NOTICE"
@@ -3169,7 +3144,7 @@ function _HandleLocksLocal {
 	if [ $writeLocks != true ]; then
 		return 1
 	else
-		echo "$SCRIPT_PID@$INSTANCE_ID" > "$lockfile" 2> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
+		echo "$SCRIPT_PID@$INSTANCE_ID" >"$lockfile" 2>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Could not create lock file on local $replicaType in [$lockfile]." "CRITICAL" $retval
@@ -3187,7 +3162,6 @@ function _HandleLocksRemote {
 	local replicaType="${3}"
 	local overwrite="${4:-false}"
 
-
 	local retval
 	local initiatorRunningPids
 
@@ -3195,23 +3169,23 @@ function _HandleLocksRemote {
 	CheckConnectivityRemoteHost
 
 	# Check if -A exists on target
-	ps -A > /dev/null 2>&1
+	ps -A >/dev/null 2>&1
 	psNotExistsOptA=$?
 
 	# Create an array of all currently running pids
 	if [ "$psNotExistaOptA" == "0" ]; then
-		read -a initiatorRunningPids <<< $(ps -A | tail -n +2 | awk '{print $1}')
+		read -a initiatorRunningPids <<<$(ps -A | tail -n +2 | awk '{print $1}')
 	else
-		read -a initiatorRunningPids <<< $(ps -e | tail -n +2 | awk '{print $1}')
+		read -a initiatorRunningPids <<<$(ps -e | tail -n +2 | awk '{print $1}')
 	fi
 
-# passing initiatorRunningPids as litteral string (has to be run through eval to be an array again)
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env replicaStateDir="'$replicaStateDir'" env initiatorRunningPidsFlat="\"(${initiatorRunningPids[@]})\"" env lockfile="'$lockfile'" env replicaType="'$replicaType'" env overwrite="'$overwrite'" \
-env INSTANCE_ID="'$INSTANCE_ID'" env FORCE_STRANGER_LOCK_RESUME="'$FORCE_STRANGER_LOCK_RESUME'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+	# passing initiatorRunningPids as litteral string (has to be run through eval to be an array again)
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env replicaStateDir="'$replicaStateDir'" env initiatorRunningPidsFlat="\"(${initiatorRunningPids[@]})\"" env lockfile="'$lockfile'" env replicaType="'$replicaType'" env overwrite="'$overwrite'" \
+		env INSTANCE_ID="'$INSTANCE_ID'" env FORCE_STRANGER_LOCK_RESUME="'$FORCE_STRANGER_LOCK_RESUME'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -3306,7 +3280,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -3477,8 +3451,8 @@ ENDSSH
 	fi
 	if [ -s "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 		(
-		_LOGGER_PREFIX=""
-		Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "NOTICE"
+			_LOGGER_PREFIX=""
+			Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "NOTICE"
 		)
 	fi
 	if [ $retval -ne 0 ]; then
@@ -3518,7 +3492,7 @@ function HandleLocks {
 	ExecTasks "$initiatorPid;$targetPid" "HandleLocks" false 0 0 720 1800 true $SLEEP_TIME $KEEP_LOGGING
 	retval=$?
 	if [ $retval -ne 0 ]; then
-		IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_HandleLocks"
+		IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_HandleLocks"
 		for pid in "${pidArray[@]}"; do
 			pid=${pid%:*}
 			if [ "$pid" == "$initiatorPid" ]; then
@@ -3529,8 +3503,7 @@ function HandleLocks {
 		done
 	fi
 
-
-	if [ $initiatorLockSuccess  == true ]; then
+	if [ $initiatorLockSuccess == true ]; then
 		INITIATOR_LOCK_FILE_EXISTS=true
 	fi
 	if [ $targetLockSuccess == true ]; then
@@ -3546,7 +3519,6 @@ function HandleLocks {
 function _UnlockReplicasLocal {
 	local lockfile="${1}"
 	local replicaType="${2}"
-
 
 	local retval
 
@@ -3565,17 +3537,16 @@ function _UnlockReplicasRemote {
 	local lockfile="${1}"
 	local replicaType="${2}"
 
-
 	local retval
 	local cmd
 
 	CheckConnectivity3rdPartyHosts
 	CheckConnectivityRemoteHost
 
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" env lockfile="'$lockfile'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" env lockfile="'$lockfile'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 if [ -f "$lockfile" ]; then
 	rm -f "$lockfile"
@@ -3634,10 +3605,9 @@ function UnlockReplicas {
 ###### Sync core functions
 
 function treeList {
-	local replicaPath="${1}" # path to the replica for which a tree needs to be constructed
-	local replicaType="${2}" # replica type: initiator, target
+	local replicaPath="${1}"  # path to the replica for which a tree needs to be constructed
+	local replicaType="${2}"  # replica type: initiator, target
 	local treeFilename="${3}" # filename to output tree (will be prefixed with $replicaType)
-
 
 	local retval
 	local rsyncCmd
@@ -3671,7 +3641,7 @@ function treeList {
 	fi
 
 	## Retval 24 = some files vanished while creating list
-	if ([ $retval -eq 0 ] || [ $retval -eq 24 ]) then
+	if ([ $retval -eq 0 ] || [ $retval -eq 24 ]); then
 		return $?
 	elif [ $retval -eq 23 ]; then
 		Logger "Some files could not be listed in $replicaType replica [$replicaPath]. Check for failing symlinks." "ERROR" $retval
@@ -3688,7 +3658,6 @@ function treeList {
 # deleteList(replicaType): Creates a list of files vanished from last run on replica $1 (initiator/target)
 function deleteList {
 	local replicaType="${1}" # replica type: initiator, target
-
 
 	local retval
 	local subretval
@@ -3712,16 +3681,15 @@ function deleteList {
 		## Let's add awk in order to filter results based on sub directories already deleted because parent directory is dleeted
 		## awk ' BEGIN {prev="^dummy/"} $0 !~ prev { print $0; prev="^"$0"/" }'
 		## See https://stackoverflow.com/q/62652954/2635443
-		if type comm > /dev/null 2>&1 ; then
+		if type comm >/dev/null 2>&1; then
 			cmd="comm -23 \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__treeAfterFileNoSuffix]}\" \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__treeCurrentFile]}\" | awk ' BEGIN {prev=\"^dummyfirstlinefileshouldnotexist1234/\"} \$0 !~ prev { print \$0; prev=\"^\"\$0\"/\" }' > \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}\""
 		else
 			## The || : forces the command to have a good result
 			cmd="(grep -F -x -v -f \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__treeCurrentFile]}\" \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__treeAfterFileNoSuffix]}\" || :) | awk ' BEGIN {prev=\"^dummyfirstlinefileshouldnotexist1234/\"} \$0 !~ prev { print \$0; prev=\"^\"\$0\"/\" }' > \"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}\""
 		fi
 
-
 		Logger "Launching command [$cmd]." "DEBUG"
-		eval "$cmd" 2>> "$LOG_FILE"
+		eval "$cmd" 2>>"$LOG_FILE"
 		retval=$?
 
 		if [ $retval -ne 0 ]; then
@@ -3732,7 +3700,7 @@ function deleteList {
 
 		# Add delete failed file list to current delete list and then empty it
 		if [ -f "${INITIATOR[$__stateDirAbsolute]}/$failedDeletionListFromReplica${INITIATOR[$__failedDeletedListFile]}" ]; then
-			cat "${INITIATOR[$__stateDirAbsolute]}/$failedDeletionListFromReplica${INITIATOR[$__failedDeletedListFile]}" >> "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}"
+			cat "${INITIATOR[$__stateDirAbsolute]}/$failedDeletionListFromReplica${INITIATOR[$__failedDeletedListFile]}" >>"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}"
 			subretval=$?
 			if [ $subretval -eq 0 ]; then
 				rm -f "${INITIATOR[$__stateDirAbsolute]}/$failedDeletionListFromReplica${INITIATOR[$__failedDeletedListFile]}"
@@ -3745,7 +3713,7 @@ function deleteList {
 	fi
 
 	# Make sure deletion list does not contain duplicates from faledDeleteListFile
-	uniq "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
+	uniq "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
 	if [ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 		FileMove "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__deletedListFile]}"
 		if [ $? -ne 0 ]; then
@@ -3757,23 +3725,22 @@ function deleteList {
 }
 
 function _getFileCtimeMtimeLocal {
-	local replicaPath="${1}" # Contains replica path
-	local replicaType="${2}" # Initiator / Target
-	local fileList="${3}" # Contains list of files to get time attrs
+	local replicaPath="${1}"   # Contains replica path
+	local replicaType="${2}"   # Initiator / Target
+	local fileList="${3}"      # Contains list of files to get time attrs
 	local timestampFile="${4}" # Where to store the timestamp file
 
-
-	echo -n "" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
+	echo -n "" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
 
 	while IFS='' read -r file; do
 		if [ -f "$replicaPath$file" ]; then
-			$STAT_CTIME_MTIME_CMD "$replicaPath$file" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.error.$SCRIPT_PID.$TSTAMP"
+			$STAT_CTIME_MTIME_CMD "$replicaPath$file" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.error.$SCRIPT_PID.$TSTAMP"
 			if [ $? -ne 0 ]; then
 				Logger "Could not get file attributes for [$replicaPath$file]." "ERROR"
-				echo "1" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
+				echo "1" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
 			fi
 		fi
-	done < "$fileList"
+	done <"$fileList"
 	if [ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 		Logger "Getting file time attributes failed on $replicaType. Stopping execution." "CRITICAL"
 		if [ -s "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.error.$SCRIPT_PID.$TSTAMP" ]; then
@@ -3781,7 +3748,7 @@ function _getFileCtimeMtimeLocal {
 		fi
 		return 1
 	else
-		cat "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" | sort > "$timestampFile"
+		cat "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" | sort >"$timestampFile"
 		return $?
 	fi
 
@@ -3792,7 +3759,6 @@ function _getFileCtimeMtimeRemote {
 	local replicaType="${2}"
 	local fileList="${3}"
 	local timestampFile="${4}"
-
 
 	local retval
 	local cmd
@@ -3810,12 +3776,12 @@ function _getFileCtimeMtimeRemote {
 		return $retval
 	fi
 
-#WIP: do we need separate error and non error files ?
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env replicaPath="'$replicaPath'" env replicaType="'$replicaType'" env REMOTE_STAT_CTIME_MTIME_CMD="'$REMOTE_STAT_CTIME_MTIME_CMD'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
+	#WIP: do we need separate error and non error files ?
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env replicaPath="'$replicaPath'" env replicaType="'$replicaType'" env REMOTE_STAT_CTIME_MTIME_CMD="'$REMOTE_STAT_CTIME_MTIME_CMD'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP"
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -3922,7 +3888,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -4057,7 +4023,7 @@ ENDSSH
 			Logger "Cannot fix FreeBSD 11 remote csh syntax." "ERROR"
 			return $retval
 		fi
-		cat "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" | sort > "$timestampFile"
+		cat "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" | sort >"$timestampFile"
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot create timestamp file for $replicaType." "ERROR"
 			return $retval
@@ -4067,11 +4033,10 @@ ENDSSH
 
 #WIP function that takes treeList files and gets ctime and mtime for each file, then compares those files to create the conflict file list
 function timestampList {
-	local replicaPath="${1}" # path to the replica for which a tree needs to be constructed
-	local replicaType="${2}" # replica type: initiator, target
-	local fileList="${3}" # List of files to get timestamps for
+	local replicaPath="${1}"       # path to the replica for which a tree needs to be constructed
+	local replicaType="${2}"       # replica type: initiator, target
+	local fileList="${3}"          # List of files to get timestamps for
 	local timestampFilename="${4}" # filename to output timestamp list (will be prefixed with $replicaType)
-
 
 	local retval
 	local rsyncCmd
@@ -4091,8 +4056,7 @@ function timestampList {
 
 function conflictList {
 	local timestampCurrentFilename="${1}" # filename of current timestamp list (will be prefixed with $replicaType)
-	local timestampAfterFilename="${2}" # filename of previous timestamp list (will be prefixed with $replicaType)
-
+	local timestampAfterFilename="${2}"   # filename of previous timestamp list (will be prefixed with $replicaType)
 
 	local retval
 
@@ -4132,20 +4096,20 @@ function conflictList {
 
 		Logger "Creating conflictual file list." "NOTICE"
 
-		comm -23 "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__type]}$timestampCurrentFilename" "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__type]}$timestampAfterFilename" | sort -t ';' -k 1,1 > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP"
+		comm -23 "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__type]}$timestampCurrentFilename" "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__type]}$timestampAfterFilename" | sort -t ';' -k 1,1 >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP"
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot extract conflict data for initiator replica." "ERROR"
 			return $retval
 		fi
-		comm -23 "${INITIATOR[$__stateDirAbsolute]}/${TARGET[$__type]}$timestampCurrentFilename" "${INITIATOR[$__stateDirAbsolute]}/${TARGET[$__type]}$timestampAfterFilename" | sort -t ';' -k 1,1 > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP"
+		comm -23 "${INITIATOR[$__stateDirAbsolute]}/${TARGET[$__type]}$timestampCurrentFilename" "${INITIATOR[$__stateDirAbsolute]}/${TARGET[$__type]}$timestampAfterFilename" | sort -t ';' -k 1,1 >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP"
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot extract conflict data for target replica.." "ERROR"
 			return $retval
 		fi
 
-		join -j 1 -t ';' -o 1.1,1.2,1.3,2.2,2.3 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.compare.$SCRIPT_PID.$TSTAMP"
+		join -j 1 -t ';' -o 1.1,1.2,1.3,2.2,2.3 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.compare.$SCRIPT_PID.$TSTAMP"
 		retval=$?
 
 		if [ $retval -ne 0 ]; then
@@ -4160,7 +4124,6 @@ function conflictList {
 function syncAttrs {
 	local initiatorReplica="${1}"
 	local targetReplica="${2}"
-
 
 	local initiatorPid
 	local targetPid
@@ -4202,7 +4165,7 @@ function syncAttrs {
 		if [ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" ]; then
 			Logger "Truncated list:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP")" "VERBOSE"
 		fi
-		( grep -Ev "^[^ ]*(c|s|t)[^ ]* " "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" || :) | ( grep -E "^[^ ]*(p|o|g|a)[^ ]* " || :) | sed -e 's/^[^ ]* //' >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-cleaned.$SCRIPT_PID.$TSTAMP"
+		(grep -Ev "^[^ ]*(c|s|t)[^ ]* " "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" || :) | (grep -E "^[^ ]*(p|o|g|a)[^ ]* " || :) | sed -e 's/^[^ ]* //' >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-cleaned.$SCRIPT_PID.$TSTAMP"
 		retval=$?
 		if [ $retval -ne 0 ]; then
 			Logger "Cannot prepare file list for attribute sync." "CRITICAL" $retval
@@ -4239,15 +4202,15 @@ function syncAttrs {
 		sourceDir="${INITIATOR[$__replicaDir]}"
 		destDir="${TARGET[$__replicaDir]}"
 		destReplica="${TARGET[$__type]}"
-		join -j 1 -t ';' -o 1.1,1.2,2.2 "$RUN_DIR/$PROGRAM.ctime_mtime___.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.ctime_mtime___.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" | awk -F';' '{if ($2 > $3) print $1}' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP"
+		join -j 1 -t ';' -o 1.1,1.2,2.2 "$RUN_DIR/$PROGRAM.ctime_mtime___.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.ctime_mtime___.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" | awk -F';' '{if ($2 > $3) print $1}' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP"
 	else
 		sourceDir="${TARGET[$__replicaDir]}"
 		destDir="${INITIATOR[$__replicaDir]}"
 		destReplica="${INITIATOR[$__type]}"
-		join -j 1 -t ';' -o 1.1,1.2,2.2 "$RUN_DIR/$PROGRAM.ctime_mtime___.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.ctime_mtime___.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" | awk -F';' '{if ($2 > $3) print $1}' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP"
+		join -j 1 -t ';' -o 1.1,1.2,2.2 "$RUN_DIR/$PROGRAM.ctime_mtime___.${TARGET[$__type]}.$SCRIPT_PID.$TSTAMP" "$RUN_DIR/$PROGRAM.ctime_mtime___.${INITIATOR[$__type]}.$SCRIPT_PID.$TSTAMP" | awk -F';' '{if ($2 > $3) print $1}' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP"
 	fi
 
-	if [ $(wc -l < "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP") -eq 0 ]; then
+	if [ $(wc -l <"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}-ctime_files.$SCRIPT_PID.$TSTAMP") -eq 0 ]; then
 		Logger "Updating file attributes on $destReplica not required" "NOTICE"
 		return 0
 	fi
@@ -4291,8 +4254,8 @@ function syncAttrs {
 
 # syncUpdate(source replica, destination replica, delete_list_filename)
 function syncUpdate {
-	local sourceReplica="${1}" # Contains replica type of source: initiator, target
-	local destinationReplica="${2}" # Contains replica type of destination: initiator, target
+	local sourceReplica="${1}"       # Contains replica type of source: initiator, target
+	local destinationReplica="${2}"  # Contains replica type of destination: initiator, target
 	local remoteDelete="${3:-false}" # Use rsnyc to delete remote files if not existent in source
 
 	local rsyncCmd
@@ -4361,7 +4324,7 @@ function syncUpdate {
 
 function _deleteLocal {
 	local replicaType="${1}" # Replica type
-	local replicaDir="${2}" # Full path to replica
+	local replicaDir="${2}"  # Full path to replica
 	local deletionDir="${3}" # deletion dir in format .[workdir]/deleted
 
 	local retval=0
@@ -4397,7 +4360,7 @@ function _deleteLocal {
 						rm -rf "${replicaDir:?}$deletionDir/$files"
 						if [ $? -ne 0 ]; then
 							Logger "Cannot remove [${replicaDir:?}$deletionDir/$files] on $replicaType." "ERROR"
-							echo "1" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
+							echo "1" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
 						fi
 					fi
 
@@ -4416,10 +4379,10 @@ function _deleteLocal {
 						fi
 						if [ $retval -ne 0 ]; then
 							Logger "Cannot move [$replicaDir$files] to deletion directory [$replicaDir$deletionDir] on $replicaType." "ERROR" $retval
-							echo "1" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
-							echo "$files" >> "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__failedDeletedListFile]}"
+							echo "1" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
+							echo "$files" >>"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__failedDeletedListFile]}"
 						else
-							echo "$files" >> "$RUN_DIR/$PROGRAM.delete.$replicaType.$SCRIPT_PID.$TSTAMP"
+							echo "$files" >>"$RUN_DIR/$PROGRAM.delete.$replicaType.$SCRIPT_PID.$TSTAMP"
 						fi
 					fi
 				fi
@@ -4431,17 +4394,17 @@ function _deleteLocal {
 						Logger "Deleting [$replicaDir$files]." "VERBOSE"
 						if [ $retval -ne 0 ]; then
 							Logger "Cannot delete [$replicaDir$files] on $replicaType." "ERROR" $retval
-							echo "1" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
-							echo "$files" >> "${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__failedDeletedListFile]}"
+							echo "1" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP"
+							echo "$files" >>"${INITIATOR[$__stateDirAbsolute]}/$replicaType${INITIATOR[$__failedDeletedListFile]}"
 						else
-							echo "$files" >> "$RUN_DIR/$PROGRAM.delete.$replicaType.$SCRIPT_PID.$TSTAMP"
+							echo "$files" >>"$RUN_DIR/$PROGRAM.delete.$replicaType.$SCRIPT_PID.$TSTAMP"
 						fi
 					fi
 				fi
 			fi
 			previousFile="$files"
 		fi
-	done < "${INITIATOR[$__stateDirAbsolute]}/$deletionListFromReplica${INITIATOR[$__deletedListFile]}"
+	done <"${INITIATOR[$__stateDirAbsolute]}/$deletionListFromReplica${INITIATOR[$__deletedListFile]}"
 	if [ -f "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.subshellError.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 		return 1
 	else
@@ -4451,7 +4414,7 @@ function _deleteLocal {
 
 function _deleteRemote {
 	local replicaType="${1}" # Replica type
-	local replicaDir="${2}" # Full path to replica
+	local replicaDir="${2}"  # Full path to replica
 	local deletionDir="${3}" # deletion dir in format .[workdir]/deleted
 
 	local retval
@@ -4480,7 +4443,7 @@ function _deleteRemote {
 	# Additionnaly, we need to copy the deletetion list to the remote state folder
 	rsyncCmd="$(type -p $RSYNC_EXECUTABLE) --rsync-path=\"env LC_ALL=C env _REMOTE_TOKEN=$_REMOTE_TOKEN $RSYNC_PATH\" -e \"$RSYNC_SSH_CMD\" \"${INITIATOR[$__stateDirAbsolute]}/$deletionListFromReplica${INITIATOR[$__deletedListFile]}\" $REMOTE_USER@$REMOTE_HOST:\"'${TARGET[$__stateDirAbsolute]}'/\" >> \"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.precopy.$SCRIPT_PID.$TSTAMP\" 2>&1"
 	Logger "RSYNC_CMD: $rsyncCmd" "DEBUG"
-	eval "$rsyncCmd" 2>> "$LOG_FILE"
+	eval "$rsyncCmd" 2>>"$LOG_FILE"
 	retval=$?
 	if [ $retval -ne 0 ]; then
 		Logger "Cannot copy the deletion list to remote replica." "ERROR" $retval
@@ -4491,15 +4454,15 @@ function _deleteRemote {
 		exit 1
 	fi
 
-#TODO: change $REPLICA_TYPE to $replicaType as in other remote functions, also applies to all other not standard env variables here
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env _DRYRUN="'$_DRYRUN'" \
-env LOCAL_OS="$REMOTE_OS" \
-env FILE_LIST="'${TARGET[$__stateDirAbsolute]}/$deletionListFromReplica${INITIATOR[$__deletedListFile]}'" env REPLICA_DIR="'$replicaDir'" env SOFT_DELETE="'$SOFT_DELETE'" \
-env DELETION_DIR="'$deletionDir'" env FAILED_DELETE_LIST="'$failedDeleteList'" env SUCCESS_DELETE_LIST="'$successDeleteList'" env REPLICA_TYPE="'$replicaType'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' >> "$RUN_DIR/$PROGRAM.remote_deletion.$SCRIPT_PID.$TSTAMP" 2>&1
+	#TODO: change $REPLICA_TYPE to $replicaType as in other remote functions, also applies to all other not standard env variables here
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env _DRYRUN="'$_DRYRUN'" \
+		env LOCAL_OS="$REMOTE_OS" \
+		env FILE_LIST="'${TARGET[$__stateDirAbsolute]}/$deletionListFromReplica${INITIATOR[$__deletedListFile]}'" env REPLICA_DIR="'$replicaDir'" env SOFT_DELETE="'$SOFT_DELETE'" \
+		env DELETION_DIR="'$deletionDir'" env FAILED_DELETE_LIST="'$failedDeleteList'" env SUCCESS_DELETE_LIST="'$successDeleteList'" env REPLICA_TYPE="'$replicaType'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >>"$RUN_DIR/$PROGRAM.remote_deletion.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -4557,7 +4520,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -4752,15 +4715,15 @@ ENDSSH
 	retval=$?
 	if [ -s "$RUN_DIR/$PROGRAM.remote_deletion.$SCRIPT_PID.$TSTAMP" ] && ([ $retval -ne 0 ] || [ "$_LOGGER_VERBOSE" == true ]); then
 		(
-		_LOGGER_PREFIX=""
-		Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.remote_deletion.$SCRIPT_PID.$TSTAMP")" "ERROR"
+			_LOGGER_PREFIX=""
+			Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.remote_deletion.$SCRIPT_PID.$TSTAMP")" "ERROR"
 		)
 	fi
 
 	## Copy back the deleted failed file list
 	rsyncCmd="$(type -p $RSYNC_EXECUTABLE) -r --rsync-path=\"env LC_ALL=C env _REMOTE_TOKEN=$_REMOTE_TOKEN $RSYNC_PATH\" -e \"$RSYNC_SSH_CMD\" --include \"$(dirname "${TARGET[$__stateDirAbsolute]}")\" --include \"${TARGET[$__stateDirAbsolute]}\" --include \"${TARGET[$__stateDirAbsolute]}/$replicaType${TARGET[$__failedDeletedListFile]}\" --include \"${TARGET[$__stateDirAbsolute]}/$replicaType${TARGET[$__successDeletedListFile]}\" --exclude='*' $REMOTE_USER@$REMOTE_HOST:\"'${TARGET[$__replicaDir]}'\" \"${INITIATOR[$__replicaDir]}\" > \"$RUN_DIR/$PROGRAM.remote_failed_deletion_list_copy.$SCRIPT_PID.$TSTAMP\""
 	Logger "RSYNC_CMD: $rsyncCmd" "DEBUG"
-	eval "$rsyncCmd" 2>> "$LOG_FILE"
+	eval "$rsyncCmd" 2>>"$LOG_FILE"
 	if [ $? -ne 0 ]; then
 		Logger "Cannot copy back the failed deletion list to initiator replica." "CRITICAL" $retval
 		_LOGGER_SILENT=true Logger "Command was [$rsyncCmd]." "WARN"
@@ -4829,7 +4792,7 @@ function Initialize {
 
 	ExecTasks "$initiatorPid;$targetPid" "Initialize_1" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 	if [ $? -ne 0 ]; then
-		IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Initialize_1"
+		IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Initialize_1"
 		initiatorFail=false
 		targetFail=false
 		for pid in "${pidArray[@]}"; do
@@ -4851,7 +4814,7 @@ function Initialize {
 
 	ExecTasks "$initiatorPid;$targetPid" "Initialize_2" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 	if [ $? -ne 0 ]; then
-		IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Initialize_2"
+		IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Initialize_2"
 		initiatorFail=false
 		targetFail=false
 		for pid in "${pidArray[@]}"; do
@@ -4918,14 +4881,14 @@ function Sync {
 
 			if [ "$resumeInitiator" != "${SYNC_ACTION[9]}" ]; then
 				Logger "Trying to resume aborted execution on $($STAT_CMD "${INITIATOR[$__initiatorLastActionFile]}") at task [$resumeInitiator] for initiator. [$resumeCount] previous tries." "NOTICE"
-				echo $((resumeCount+1)) > "${INITIATOR[$__resumeCount]}"
+				echo $((resumeCount + 1)) >"${INITIATOR[$__resumeCount]}"
 			else
 				resumeInitiator="none"
 			fi
 
 			if [ "$resumeTarget" != "${SYNC_ACTION[9]}" ]; then
 				Logger "Trying to resume aborted execution on $($STAT_CMD "${INITIATOR[$__targetLastActionFile]}") as task [$resumeTarget] for target. [$resumeCount] previous tries." "NOTICE"
-				echo $((resumeCount+1)) > "${INITIATOR[$__resumeCount]}"
+				echo $((resumeCount + 1)) >"${INITIATOR[$__resumeCount]}"
 			else
 				resumeTarget="none"
 			fi
@@ -4933,7 +4896,7 @@ function Sync {
 			if [ $RESUME_TRY -ne 0 ]; then
 				Logger "Will not resume aborted execution. Too many resume tries [$resumeCount]." "WARN"
 			fi
-			echo "0" > "${INITIATOR[$__resumeCount]}"
+			echo "0" >"${INITIATOR[$__resumeCount]}"
 			resumeInitiator="none"
 			resumeTarget="none"
 		fi
@@ -4973,32 +4936,32 @@ function Sync {
 
 		ExecTasks "$initiatorPid;$targetPid" "Sync_treeListBefore" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 		if [ $? -ne 0 ]; then
-			IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_treeListBefore"
+			IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_treeListBefore"
 			initiatorFail=false
 			targetFail=false
 			for pid in "${pidArray[@]}"; do
 				pid=${pid%:*}
 				if [ "$pid" == "$initiatorPid" ]; then
-					echo "${SYNC_ACTION[0]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[0]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					initiatorFail=true
 				elif [ "$pid" == "$targetPid" ]; then
-					echo "${SYNC_ACTION[0]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[0]}" >"${INITIATOR[$__targetLastActionFile]}"
 					targetFail=true
 				fi
 			done
 
 			if [ $initiatorFail == false ]; then
-				echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 			fi
 
 			if [ $targetFail == false ]; then
-				echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__targetLastActionFile]}"
 			fi
 
 			exit 1
 		else
-			echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[1]}"
 			resumeTarget="${SYNC_ACTION[1]}"
 		fi
@@ -5018,32 +4981,32 @@ function Sync {
 
 		ExecTasks "$initiatorPid;$targetPid" "Sync_deleteList" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 		if [ $? -ne 0 ]; then
-			IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_deleteList"
+			IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_deleteList"
 			initiatorFail=false
 			targetFail=false
 			for pid in "${pidArray[@]}"; do
 				pid=${pid%:*}
 				if [ "$pid" == "$initiatorPid" ]; then
-					echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					initiatorFail=true
 				elif [ "$pid" == "$targetPid" ]; then
-					echo "${SYNC_ACTION[1]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[1]}" >"${INITIATOR[$__targetLastActionFile]}"
 					targetFail=true
 				fi
 			done
 
 			if [ $initiatorFail == false ]; then
-				echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 			fi
 
 			if [ $targetFail == false ]; then
-				echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__targetLastActionFile]}"
 			fi
 
 			exit 1
 		else
-			echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[2]}"
 			resumeTarget="${SYNC_ACTION[2]}"
 		fi
@@ -5067,38 +5030,38 @@ function Sync {
 
 			ExecTasks "$initiatorPid;$targetPid" "Sync_timestampListBefore" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 			if [ $? -ne 0 ]; then
-				IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_timestampListBefore"
+				IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_timestampListBefore"
 				initiatorFail=false
 				targetFail=false
 				for pid in "${pidArray[@]}"; do
 					pid=${pid%:*}
 					if [ "$pid" == "$initiatorPid" ]; then
-						echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+						echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 						initiatorFail=true
 					elif [ "$pid" == "$targetPid" ]; then
-						echo "${SYNC_ACTION[2]}" > "${INITIATOR[$__targetLastActionFile]}"
+						echo "${SYNC_ACTION[2]}" >"${INITIATOR[$__targetLastActionFile]}"
 						targetFail=true
 					fi
 				done
 
 				if [ $initiatorFail == false ]; then
-					echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 				fi
 
 				if [ $targetFail == false ]; then
-					echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__targetLastActionFile]}"
 				fi
 
 				exit 1
 			else
-				echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__targetLastActionFile]}"
 				resumeInitiator="${SYNC_ACTION[3]}"
 				resumeTarget="${SYNC_ACTION[3]}"
 			fi
 		else
-			echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[3]}"
 			resumeTarget="${SYNC_ACTION[3]}"
 		fi
@@ -5110,19 +5073,19 @@ function Sync {
 			conflictList "${INITIATOR[$__timestampCurrentFile]}" "${INITIATOR[$__timestampAfterFileNoSuffix]}" &
 			ExecTasks $! "${FUNCNAME[0]}_conflictList" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 			if [ $? -ne 0 ]; then
-				echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[3]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[3]}" >"${INITIATOR[$__targetLastActionFile]}"
 				exit 1
 			else
-				echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__targetLastActionFile]}"
 				resumeInitiator="${SYNC_ACTION[4]}"
 				resumeTarget="${SYNC_ACTION[4]}"
 
 			fi
 		else
-			echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[4]}"
 			resumeTarget="${SYNC_ACTION[4]}"
 		fi
@@ -5134,19 +5097,19 @@ function Sync {
 			syncAttrs "${INITIATOR[$__replicaDir]}" "${TARGET[$__replicaDir]}" &
 			ExecTasks $! "${FUNCNAME[0]}_syncAttrs" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 			if [ $? -ne 0 ]; then
-				echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[4]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[4]}" >"${INITIATOR[$__targetLastActionFile]}"
 				exit 1
 			else
-				echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__targetLastActionFile]}"
 				resumeInitiator="${SYNC_ACTION[5]}"
 				resumeTarget="${SYNC_ACTION[5]}"
 
 			fi
 		else
-			echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[5]}"
 			resumeTarget="${SYNC_ACTION[5]}"
 		fi
@@ -5159,11 +5122,11 @@ function Sync {
 				syncUpdate "${TARGET[$__type]}" "${INITIATOR[$__type]}" $rsyncRemoteDelete &
 				ExecTasks $! "${FUNCNAME[0]}_syncUpdate_initiator" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 				if [ $? -ne 0 ]; then
-					echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__targetLastActionFile]}"
 					resumeTarget="${SYNC_ACTION[5]}"
 					exit 1
 				else
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__targetLastActionFile]}"
 					resumeTarget="${SYNC_ACTION[6]}"
 				fi
 			fi
@@ -5171,11 +5134,11 @@ function Sync {
 				syncUpdate "${INITIATOR[$__type]}" "${TARGET[$__type]}" $rsyncRemoteDelete &
 				ExecTasks $! "${FUNCNAME[0]}_syncUpdate_target" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 				if [ $? -ne 0 ]; then
-					echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					resumeInitiator="${SYNC_ACTION[5]}"
 					exit 1
 				else
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					resumeInitiator="${SYNC_ACTION[6]}"
 				fi
 			fi
@@ -5184,11 +5147,11 @@ function Sync {
 				syncUpdate "${INITIATOR[$__type]}" "${TARGET[$__type]}" $rsyncRemoteDelete &
 				ExecTasks $! "${FUNCNAME[0]}_syncUpdate_target" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 				if [ $? -ne 0 ]; then
-					echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					resumeInitiator="${SYNC_ACTION[5]}"
 					exit 1
 				else
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					resumeInitiator="${SYNC_ACTION[6]}"
 				fi
 			fi
@@ -5196,11 +5159,11 @@ function Sync {
 				syncUpdate "${TARGET[$__type]}" "${INITIATOR[$__type]}" $rsyncRemoteDelete &
 				ExecTasks $! "${FUNCNAME[0]}_syncUpdate_initiator" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 				if [ $? -ne 0 ]; then
-					echo "${SYNC_ACTION[5]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[5]}" >"${INITIATOR[$__targetLastActionFile]}"
 					resumeTarget="${SYNC_ACTION[5]}"
 					exit 1
 				else
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__targetLastActionFile]}"
 					resumeTarget="${SYNC_ACTION[6]}"
 				fi
 			fi
@@ -5209,8 +5172,8 @@ function Sync {
 
 	# If SYNC_TYPE is not bidirectional, skip all other steps
 	if [ "$SYNC_TYPE" == "initiator2target" ] || [ "$SYNC_TYPE" == "target2initiator" ]; then
-		echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-		echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__targetLastActionFile]}"
+		echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+		echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__targetLastActionFile]}"
 		resumeInitiator="${SYNC_ACTION[9]}"
 		resumeTarget="${SYNC_ACTION[9]}"
 	fi
@@ -5229,31 +5192,31 @@ function Sync {
 
 		ExecTasks "$initiatorPid;$targetPid" "Sync_deletionPropagation" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 		if [ $? -ne 0 ]; then
-			IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_deletionPropagation"
+			IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_deletionPropagation"
 			initiatorFail=false
 			targetFail=false
 			for pid in "${pidArray[@]}"; do
 				pid=${pid%:*}
 				if [ "$pid" == "$initiatorPid" ]; then
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					initiatorFail=true
 				elif [ "$pid" == "$targetPid" ]; then
-					echo "${SYNC_ACTION[6]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[6]}" >"${INITIATOR[$__targetLastActionFile]}"
 					targetFail=true
 				fi
 			done
 
 			if [ $initiatorFail == false ]; then
-				echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 			fi
 
 			if [ $targetFail == false ]; then
-				echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__targetLastActionFile]}"
 			fi
 			exit 1
 		else
-			echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[7]}"
 			resumeTarget="${SYNC_ACTION[7]}"
 
@@ -5274,32 +5237,32 @@ function Sync {
 
 		ExecTasks "$initiatorPid;$targetPid" "Sync_treeListAfter" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 		if [ $? -ne 0 ]; then
-			IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_treeListAfter"
+			IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_treeListAfter"
 			initiatorFail=false
 			targetFail=false
 			for pid in "${pidArray[@]}"; do
 				pid=${pid%:*}
 				if [ "$pid" == "$initiatorPid" ]; then
-					echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 					initiatorFail=true
 				elif [ "$pid" == "$targetPid" ]; then
-					echo "${SYNC_ACTION[7]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[7]}" >"${INITIATOR[$__targetLastActionFile]}"
 					targetFail=true
 				fi
 			done
 
 			if [ $initiatorFail == false ]; then
-				echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 			fi
 
 			if [ $targetFail == false ]; then
-				echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__targetLastActionFile]}"
 			fi
 
 			exit 1
 		else
-			echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[8]}"
 			resumeTarget="${SYNC_ACTION[8]}"
 		fi
@@ -5323,53 +5286,52 @@ function Sync {
 
 			ExecTasks "$initiatorPid;$targetPid" "Sync_timestampListAfter" false 0 0 $SOFT_MAX_EXEC_TIME $HARD_MAX_EXEC_TIME false $SLEEP_TIME $KEEP_LOGGING
 			if [ $? -ne 0 ]; then
-				IFS=';' read -r -a pidArray <<< "$WAIT_FOR_TASK_COMPLETION_Sync_timeStampListAfter"
+				IFS=';' read -r -a pidArray <<<"$WAIT_FOR_TASK_COMPLETION_Sync_timeStampListAfter"
 				initiatorFail=false
 				targetFail=false
 				for pid in "${pidArray[@]}"; do
 					pid=${pid%:*}
 					if [ "$pid" == "$initiatorPid" ]; then
-						echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+						echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 						initiatorFail=true
 					elif [ "$pid" == "$targetPid" ]; then
-						echo "${SYNC_ACTION[8]}" > "${INITIATOR[$__targetLastActionFile]}"
+						echo "${SYNC_ACTION[8]}" >"${INITIATOR[$__targetLastActionFile]}"
 						targetFail=true
 					fi
 				done
 
 				if [ $initiatorFail == false ]; then
-					echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__initiatorLastActionFile]}"
+					echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__initiatorLastActionFile]}"
 				fi
 
 				if [ $targetFail == false ]; then
-					echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__targetLastActionFile]}"
+					echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__targetLastActionFile]}"
 				fi
 
 				exit 1
 			else
-				echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-				echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__targetLastActionFile]}"
+				echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+				echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__targetLastActionFile]}"
 				resumeInitiator="${SYNC_ACTION[9]}"
 				resumeTarget="${SYNC_ACTION[9]}"
 			fi
 		else
-			echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__initiatorLastActionFile]}"
-			echo "${SYNC_ACTION[9]}" > "${INITIATOR[$__targetLastActionFile]}"
+			echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__initiatorLastActionFile]}"
+			echo "${SYNC_ACTION[9]}" >"${INITIATOR[$__targetLastActionFile]}"
 			resumeInitiator="${SYNC_ACTION[9]}"
 			resumeTarget="${SYNC_ACTION[9]}"
 		fi
 	fi
 
 	Logger "Finished synchronization task." "NOTICE"
-	echo "0" > "${INITIATOR[$__resumeCount]}"
+	echo "0" >"${INITIATOR[$__resumeCount]}"
 }
 
 function _SoftDeleteLocal {
-	local replicaType="${1}" # replica type (initiator, target)
+	local replicaType="${1}"         # replica type (initiator, target)
 	local replicaDeletionPath="${2}" # Contains the full path to softdelete / backup directory without ending slash
-	local changeTime="${3}" # Delete files older than changeTime days
-	local deletionType="${4}" # Trivial deletion type string
-
+	local changeTime="${3}"          # Delete files older than changeTime days
+	local deletionType="${4}"        # Trivial deletion type string
 
 	local retval
 
@@ -5385,21 +5347,21 @@ function _SoftDeleteLocal {
 			Logger "Removing files older than $changeTime days on $replicaType replica for $deletionType deletion." "NOTICE"
 		fi
 
-		$FIND_CMD "$replicaDeletionPath" -type f -ctime +"$changeTime" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP" 2>> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP"
+		$FIND_CMD "$replicaDeletionPath" -type f -ctime +"$changeTime" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP" 2>>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP"
 		while IFS='' read -r file; do
 			Logger "On $replicaType will delete file [$file]" "VERBOSE"
 			if [ $_DRYRUN == false ]; then
-				rm -f "$file" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+				rm -f "$file" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 			fi
-		done < "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP"
+		done <"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP"
 
-		$FIND_CMD "$replicaDeletionPath" -type d -empty -ctime +"$changeTime" > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP" 2>> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP"
+		$FIND_CMD "$replicaDeletionPath" -type d -empty -ctime +"$changeTime" >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP" 2>>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP"
 		while IFS='' read -r directory; do
 			Logger "On $replicaType will delete empty directory [$file]" "VERBOSE"
 			if [ $_DRYRUN == false ]; then
-				rm -df "$directory" >> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+				rm -df "$directory" >>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 			fi
-		done < "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP"
+		done <"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteList.$replicaType.$SCRIPT_PID.$TSTAMP"
 
 		if [ -s "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.deleteErrors.$replicaType.$SCRIPT_PID.$TSTAMP" ]; then
 			Logger "Error while executing cleanup on $replicaType replica." "ERROR" $retval
@@ -5419,9 +5381,8 @@ function _SoftDeleteLocal {
 function _SoftDeleteRemote {
 	local replicaType="${1}"
 	local replicaDeletionPath="${2}" # Contains the full path to softdelete / backup directory without ending slash
-	local changeTime="${3}" # Delete files older than changeTime days
-	local deletionType="${4}" # Trivial deletion type string
-
+	local changeTime="${3}"          # Delete files older than changeTime days
+	local deletionType="${4}"        # Trivial deletion type string
 
 	local retval
 
@@ -5439,11 +5400,11 @@ function _SoftDeleteRemote {
 		Logger "Removing files older than $changeTime days on $replicaType replica for $deletionType deletion." "NOTICE"
 	fi
 
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env _DRYRUN="'$_DRYRUN'" env replicaType="'$replicaType'" env replicaDeletionPath="'$replicaDeletionPath'" env changeTime="'$changeTime'" env REMOTE_FIND_CMD="'$REMOTE_FIND_CMD'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env _DRYRUN="'$_DRYRUN'" env replicaType="'$replicaType'" env replicaDeletionPath="'$replicaDeletionPath'" env changeTime="'$changeTime'" env REMOTE_FIND_CMD="'$REMOTE_FIND_CMD'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP" 2>&1
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -5550,7 +5511,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -5686,14 +5647,14 @@ ENDSSH
 	if [ $retval -ne 0 ]; then
 		Logger "Error while executing cleanup on remote $replicaType replica." "ERROR" $retval
 		(
-		_LOGGER_PREFIX=""
-		Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "WARN"
+			_LOGGER_PREFIX=""
+			Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "WARN"
 		)
 	else
 		Logger "Cleanup complete on $replicaType replica." "NOTICE"
 		(
-		_LOGGER_PREFIX=""
-		Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "VERBOSE"
+			_LOGGER_PREFIX=""
+			Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$replicaType.$SCRIPT_PID.$TSTAMP")" "VERBOSE"
 		)
 	fi
 }
@@ -5747,7 +5708,7 @@ function _TriggerInitiatorRunLocal {
 	PUSH_FILE="${INITIATOR[$__replicaDir]}${INITIATOR[$__updateTriggerFile]}"
 
 	if [ -d $(dirname "$PUSH_FILE") ]; then
-		echo "$INSTANCE_ID#$(date '+%Y%m%dT%H%M%S.%N')" >> "$PUSH_FILE" 2> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
+		echo "$INSTANCE_ID#$(date '+%Y%m%dT%H%M%S.%N')" >>"$PUSH_FILE" 2>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
 		if [ $? -ne 0 ]; then
 			Logger "Could not notify local initiator of file changes." "ERROR"
 			Logger "Truncated output:\n$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP")" "ERROR"
@@ -5764,11 +5725,11 @@ function _TriggerInitiatorRunLocal {
 
 function _TriggerInitiatorRunRemote {
 
-$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
-env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
-env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
-env INSTANCE_ID="'$INSTANCE_ID'" env PUSH_FILE="'${INITIATOR[$__replicaDir]}${INITIATOR[$__updateTriggerFile]}'" \
-env LC_ALL=C $COMMAND_SUDO' bash -s' << 'ENDSSH' > "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2> "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
+	$SSH_CMD env _REMOTE_TOKEN="$_REMOTE_TOKEN" \
+		env _DEBUG="'$_DEBUG'" env _PARANOIA_DEBUG="'$_PARANOIA_DEBUG'" env _LOGGER_SILENT="'$_LOGGER_SILENT'" env _LOGGER_VERBOSE="'$_LOGGER_VERBOSE'" env _LOGGER_PREFIX="'$_LOGGER_PREFIX'" env _LOGGER_ERR_ONLY="'$_LOGGER_ERR_ONLY'" \
+		env _REMOTE_EXECUTION="true" env PROGRAM="'$PROGRAM'" env SCRIPT_PID="'$SCRIPT_PID'" env TSTAMP="'$TSTAMP'" \
+		env INSTANCE_ID="'$INSTANCE_ID'" env PUSH_FILE="'${INITIATOR[$__replicaDir]}${INITIATOR[$__updateTriggerFile]}'" \
+		env LC_ALL=C $COMMAND_SUDO' bash -s' <<'ENDSSH' >"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.$SCRIPT_PID.$TSTAMP" 2>"$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP"
 _REMOTE_TOKEN="(o_0)"
 ## Default directory where to store temporary run files
 
@@ -5826,7 +5787,7 @@ function _Logger {
 		echo -e "$logValue" >> "$LOG_FILE"
 
 		# Build current log file for alerts if we have a sufficient environment
-		if [ "$RUN_DIR/$PROGRAM" != "/" ]; then
+		if [ "$_LOGGER_WRITE_PARTIAL_LOGS" == true ] && [ "$RUN_DIR/$PROGRAM" != "/" ]; then
 			echo -e "$logValue" >> "$RUN_DIR/$PROGRAM._Logger.$SCRIPT_PID.$TSTAMP"
 		fi
 	fi
@@ -5932,8 +5893,8 @@ ENDSSH
 		Logger "Could not notifiy remote initiator of file changes." "ERROR"
 		Logger "SSH_CMD [$SSH_CMD]" "DEBUG"
 		(
-		_LOGGER_PREFIX=""
-		Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP")" "ERROR"
+			_LOGGER_PREFIX=""
+			Logger "$(head -c16384 "$RUN_DIR/$PROGRAM.${FUNCNAME[0]}.error.$SCRIPT_PID.$TSTAMP")" "ERROR"
 		)
 		return 1
 	else
@@ -5956,34 +5917,33 @@ function _SummaryFromRsyncFile {
 	local summaryFile="${2}"
 	local direction="${3}"
 
-
 	if [ -f "$summaryFile" ]; then
 		while read -r file; do
 			# grep -E "^<|^>|^\." = Remove all lines that do not begin with '<', '>' or '.' to deal with a bizarre bug involving rsync 3.0.6 / CentOS 6 and --skip-compress showing 'adding zip' l$
-			if echo "$file" | grep -E "^<|^>|^\.|^\*" > /dev/null 2>&1; then
+			if echo "$file" | grep -E "^<|^>|^\.|^\*" >/dev/null 2>&1; then
 				# Check for time attribute changes only (eg rsync output '.d..t......'
-				if echo "$file" | grep -E "\..\.\.t\.\.\.\.\.\." > /dev/null 2>&1; then
+				if echo "$file" | grep -E "\..\.\.t\.\.\.\.\.\." >/dev/null 2>&1; then
 					verb="TIMESTAMP"
-				elif echo "$file" | grep -E "\*deleting" > /dev/null 2>&1; then
+				elif echo "$file" | grep -E "\*deleting" >/dev/null 2>&1; then
 					verb="DELETE"
 					if [ "$direction" == ">>" ]; then
-						TARGET_DELETES_COUNT=$((TARGET_DELETES_COUNT+1))
+						TARGET_DELETES_COUNT=$((TARGET_DELETES_COUNT + 1))
 					elif [ "$direction" == "<<" ]; then
-						INITIATOR_DELETES_COUNT=$((INITIATOR_DELETES_COUNT+1))
+						INITIATOR_DELETES_COUNT=$((INITIATOR_DELETES_COUNT + 1))
 					fi
 				else
 					verb="UPDATE"
 					if [ "$direction" == ">>" ]; then
-						TARGET_UPDATES_COUNT=$((TARGET_UPDATES_COUNT+1))
+						TARGET_UPDATES_COUNT=$((TARGET_UPDATES_COUNT + 1))
 					elif [ "$direction" == "<<" ]; then
-						INITIATOR_UPDATES_COUNT=$((INITIATOR_UPDATES_COUNT+1))
+						INITIATOR_UPDATES_COUNT=$((INITIATOR_UPDATES_COUNT + 1))
 					fi
 				fi
 				# awk removes first part of line until space, then show all others
 				# We don't use awk '$1="";print $0' since it would keep a space as first character
 				Logger "$verb $direction $replicaPath$(echo "$file" | awk '{for (i=2; i<NF; i++) printf $i " "; print $NF}')" "ALWAYS"
 			fi
-		done < "$summaryFile"
+		done <"$summaryFile"
 	fi
 }
 
@@ -5992,45 +5952,44 @@ function _SummaryFromDeleteFile {
 	local summaryFile="${2}"
 	local direction="${3}"
 
-
 	if [ -f "$summaryFile" ]; then
 		while read -r file; do
 			Logger "DELETE $direction $replicaPath$file" "ALWAYS"
 			if [ "$direction" == ">>" ]; then
-				TARGET_DELETES_COUNT=$((TARGET_DELETES_COUNT+1))
+				TARGET_DELETES_COUNT=$((TARGET_DELETES_COUNT + 1))
 			elif [ "$direction" == "<<" ]; then
-				INITIATOR_DELETES_COUNT=$((INITIATOR_DELETES_COUNT+1))
+				INITIATOR_DELETES_COUNT=$((INITIATOR_DELETES_COUNT + 1))
 			fi
-		done < "$summaryFile"
+		done <"$summaryFile"
 	fi
 }
 
 function Summary {
 
 	(
-	_LOGGER_PREFIX=""
+		_LOGGER_PREFIX=""
 
-	Logger "Attributes only updates: INITIATOR << >> TARGET" "ALWAYS"
+		Logger "Attributes only updates: INITIATOR << >> TARGET" "ALWAYS"
 
-	_SummaryFromRsyncFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.attr-update.target.$SCRIPT_PID.$TSTAMP" ">>"
-	_SummaryFromRsyncFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.attr-update.initiator.$SCRIPT_PID.$TSTAMP" "<<"
+		_SummaryFromRsyncFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.attr-update.target.$SCRIPT_PID.$TSTAMP" ">>"
+		_SummaryFromRsyncFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.attr-update.initiator.$SCRIPT_PID.$TSTAMP" "<<"
 
-	Logger "File transfers and simple deletions: INITIATOR << >> TARGET (may include file ownership and timestamp attributes)" "ALWAYS"
-	_SummaryFromRsyncFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.update.target.$SCRIPT_PID.$TSTAMP" ">>"
-	_SummaryFromRsyncFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.update.initiator.$SCRIPT_PID.$TSTAMP" "<<"
+		Logger "File transfers and simple deletions: INITIATOR << >> TARGET (may include file ownership and timestamp attributes)" "ALWAYS"
+		_SummaryFromRsyncFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.update.target.$SCRIPT_PID.$TSTAMP" ">>"
+		_SummaryFromRsyncFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.update.initiator.$SCRIPT_PID.$TSTAMP" "<<"
 
-	Logger "File deletions: INITIATOR << >> TARGET" "ALWAYS"
-	if [ "$REMOTE_OPERATION" == true ]; then
-		_SummaryFromDeleteFile "${TARGET[$__replicaDir]}" "${INITIATOR[$__stateDirAbsolute]}/target${TARGET[$__successDeletedListFile]}" "- >>"
-	else
-		_SummaryFromDeleteFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.delete.target.$SCRIPT_PID.$TSTAMP" ">>"
-	fi
-	_SummaryFromDeleteFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.delete.initiator.$SCRIPT_PID.$TSTAMP" "<<"
+		Logger "File deletions: INITIATOR << >> TARGET" "ALWAYS"
+		if [ "$REMOTE_OPERATION" == true ]; then
+			_SummaryFromDeleteFile "${TARGET[$__replicaDir]}" "${INITIATOR[$__stateDirAbsolute]}/target${TARGET[$__successDeletedListFile]}" "- >>"
+		else
+			_SummaryFromDeleteFile "${TARGET[$__replicaDir]}" "$RUN_DIR/$PROGRAM.delete.target.$SCRIPT_PID.$TSTAMP" ">>"
+		fi
+		_SummaryFromDeleteFile "${INITIATOR[$__replicaDir]}" "$RUN_DIR/$PROGRAM.delete.initiator.$SCRIPT_PID.$TSTAMP" "<<"
 
-	Logger "Initiator has $INITIATOR_UPDATES_COUNT updates." "ALWAYS"
-	Logger "Target has $TARGET_UPDATES_COUNT updates." "ALWAYS"
-	Logger "Initiator has $INITIATOR_DELETES_COUNT deletions." "ALWAYS"
-	Logger "Target has $TARGET_DELETES_COUNT deletions." "ALWAYS"
+		Logger "Initiator has $INITIATOR_UPDATES_COUNT updates." "ALWAYS"
+		Logger "Target has $TARGET_UPDATES_COUNT updates." "ALWAYS"
+		Logger "Initiator has $INITIATOR_DELETES_COUNT deletions." "ALWAYS"
+		Logger "Target has $TARGET_DELETES_COUNT deletions." "ALWAYS"
 	)
 }
 
@@ -6043,16 +6002,16 @@ function LogConflicts {
 
 	if [ -s "$RUN_DIR/$PROGRAM.conflictList.compare.$SCRIPT_PID.$TSTAMP" ]; then
 		Logger "File conflicts: INITIATOR << >> TARGET" "ALWAYS"
-		> "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}"
+		>"${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}"
 		while read -r line; do
-			echo "${INITIATOR[$__replicaDir]}$(echo "$line" | awk -F';' '{print $1}') << >> ${TARGET[$__replicaDir]}$(echo "$line" | awk -F';' '{print $1}')" >> "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}"
-			conflicts=$((conflicts+1))
-		done < "$RUN_DIR/$PROGRAM.conflictList.compare.$SCRIPT_PID.$TSTAMP"
+			echo "${INITIATOR[$__replicaDir]}$(echo "$line" | awk -F';' '{print $1}') << >> ${TARGET[$__replicaDir]}$(echo "$line" | awk -F';' '{print $1}')" >>"${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}"
+			conflicts=$((conflicts + 1))
+		done <"$RUN_DIR/$PROGRAM.conflictList.compare.$SCRIPT_PID.$TSTAMP"
 
 		if [ -s "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}" ]; then
 			(
-			_LOGGER_PREFIX=""
-			Logger "Truncated output:\n$(head -c16384 "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}")" "ALWAYS"
+				_LOGGER_PREFIX=""
+				Logger "Truncated output:\n$(head -c16384 "${INITIATOR[$__stateDirAbsolute]}/${INITIATOR[$__conflictListFile]}")" "ALWAYS"
 			)
 		fi
 
@@ -6086,7 +6045,6 @@ function Init {
 	local uri
 	local hosturiandpath
 	local hosturi
-
 
 	## Test if target dir is a ssh uri, and if yes, break it down it its values
 	if [ "${TARGET_SYNC_DIR:0:6}" == "ssh://" ]; then
@@ -6251,14 +6209,14 @@ function Init {
 	fi
 	TARGET[$__backupDir]="$OSYNC_DIR/$backupDir"
 	TARGET[$__deleteDir]="$OSYNC_DIR/$deleteDir"
-	TARGET[$__partialDir]="$OSYNC_DIR/$partialDir"											# unused
-	TARGET[$__initiatorLastActionFile]="${TARGET[$__stateDirAbsolute]}/initiator-$lastAction-$INSTANCE_ID$drySuffix"		# unused
-	TARGET[$__targetLastActionFile]="${TARGET[$__stateDirAbsolute]}/target-$lastAction-$INSTANCE_ID$drySuffix"		# unused
-	TARGET[$__resumeCount]="${TARGET[$__stateDirAbsolute]}/$resumeCount-$INSTANCE_ID$drySuffix"				# unused
-	TARGET[$__treeCurrentFile]="-tree-current-$INSTANCE_ID$drySuffix"								# unused
-	TARGET[$__treeAfterFile]="-tree-after-$INSTANCE_ID$drySuffix"									# unused
-	TARGET[$__treeAfterFileNoSuffix]="-tree-after-$INSTANCE_ID"									# unused
-	TARGET[$__deletedListFile]="-deleted-list-$INSTANCE_ID$drySuffix"								# unused
+	TARGET[$__partialDir]="$OSYNC_DIR/$partialDir"                                                                   # unused
+	TARGET[$__initiatorLastActionFile]="${TARGET[$__stateDirAbsolute]}/initiator-$lastAction-$INSTANCE_ID$drySuffix" # unused
+	TARGET[$__targetLastActionFile]="${TARGET[$__stateDirAbsolute]}/target-$lastAction-$INSTANCE_ID$drySuffix"       # unused
+	TARGET[$__resumeCount]="${TARGET[$__stateDirAbsolute]}/$resumeCount-$INSTANCE_ID$drySuffix"                      # unused
+	TARGET[$__treeCurrentFile]="-tree-current-$INSTANCE_ID$drySuffix"                                                # unused
+	TARGET[$__treeAfterFile]="-tree-after-$INSTANCE_ID$drySuffix"                                                    # unused
+	TARGET[$__treeAfterFileNoSuffix]="-tree-after-$INSTANCE_ID"                                                      # unused
+	TARGET[$__deletedListFile]="-deleted-list-$INSTANCE_ID$drySuffix"                                                # unused
 	TARGET[$__failedDeletedListFile]="-failed-delete-$INSTANCE_ID$drySuffix"
 	TARGET[$__successDeletedListFile]="-success-delete-$INSTANCE_ID$drySuffix"
 	TARGET[$__timestampCurrentFile]="-timestamps-current-$INSTANCE_ID$drySuffix"
@@ -6299,16 +6257,16 @@ function Init {
 	fi
 
 	SYNC_ACTION=(
-	'replica-tree'
-	'deleted-list'
-	'timestampList-list'
-	'conflict-list'
-	'sync_attrs'
-	'update-replica'
-	'delete-propagation'
-	'replica-tree-after'
-	'timestampList-after'
-	'synced'
+		'replica-tree'
+		'deleted-list'
+		'timestampList-list'
+		'conflict-list'
+		'sync_attrs'
+		'update-replica'
+		'delete-propagation'
+		'replica-tree-after'
+		'timestampList-after'
+		'synced'
 	)
 }
 
@@ -6338,6 +6296,7 @@ function Usage {
 	echo "--no-prefix            Will suppress time / date suffix from output"
 	echo "--silent               Will run osync without any output to stdout, used for cron jobs"
 	echo "--errors-only          Output only errors (can be combined with silent or verbose)"
+	echo "--non-interactive      Don't show running animation in cron / service mode"
 	echo "--summary              Outputs a list of transferred / deleted files at the end of the run"
 	echo "--log-conflicts        [EXPERIMENTAL] Outputs a list of conflicted files"
 	echo "--alert-conflicts      Send an email if conflictual files found (implies --log-conflicts)"
@@ -6373,8 +6332,7 @@ function Usage {
 }
 
 function SyncOnChanges {
-	local isTargetHelper="${1:-false}"		# Is this service supposed to be run as target helper ?
-
+	local isTargetHelper="${1:-false}" # Is this service supposed to be run as target helper ?
 
 	local watchDirectory
 	local watchCmd
@@ -6382,12 +6340,12 @@ function SyncOnChanges {
 	local retval
 
 	if [ "$LOCAL_OS" == "MacOSX" ]; then
-		if ! type fswatch > /dev/null 2>&1 ; then
+		if ! type fswatch >/dev/null 2>&1; then
 			Logger "No fswatch command found. Cannot monitor changes." "CRITICAL"
 			exit 1
 		fi
 	else
-		if ! type inotifywait > /dev/null 2>&1 ; then
+		if ! type inotifywait >/dev/null 2>&1; then
 			Logger "No inotifywait command found. Cannot monitor changes." "CRITICAL"
 			exit 1
 		fi
@@ -6428,7 +6386,6 @@ function SyncOnChanges {
 			TriggerInitiatorRun
 		fi
 
-
 		Logger "#### Monitoring now." "NOTICE"
 
 		# inotifywait < 3.20 can't handle multiple --exclude statements. For compat issues, we'll watch everything except .osync_workdir
@@ -6436,18 +6393,18 @@ function SyncOnChanges {
 		if [ "$LOCAL_OS" == "MacOSX" ]; then
 			watchCmd="fswatch --exclude \"$OSYNC_DIR\" -1 \"$watchDirectory\" > /dev/null"
 			# Mac fswatch doesn't have timeout switch, replacing wait $! with WaitForTaskCompletion without warning nor spinner and increased SLEEP_TIME to avoid cpu hogging. This simulates wait $! with timeout
-			Logger "Watch cmd M: [$watchCmd]."  "DEBUG"
+			Logger "Watch cmd M: [$watchCmd]." "DEBUG"
 			eval "$watchCmd" &
 			ExecTasks $! "MonitorMacOSXWait" false 0 0 0 $MAX_WAIT true 1 0
 		elif [ "$LOCAL_OS" == "BSD" ]; then
 			# BSD version of inotifywait does not support multiple --exclude statements
 			watchCmd="inotifywait --exclude \"$OSYNC_DIR\" -qq -r -e create -e modify -e delete -e move -e attrib --timeout \"$MAX_WAIT\" \"$watchDirectory\""
-			Logger "Watch cmd B: [$watchCmd]."  "DEBUG"
+			Logger "Watch cmd B: [$watchCmd]." "DEBUG"
 			eval "$watchCmd" &
 			wait $!
 		else
 			watchCmd="inotifywait --exclude \"$OSYNC_DIR\" -qq -r -e create -e modify -e delete -e move -e attrib --timeout \"$MAX_WAIT\" \"$watchDirectory\""
-			Logger "Watch cmd L: [$watchCmd]."  "DEBUG"
+			Logger "Watch cmd L: [$watchCmd]." "DEBUG"
 			eval "$watchCmd" &
 			wait $!
 		fi
@@ -6520,133 +6477,136 @@ TARGET_DELETES_COUNT=0
 function GetCommandlineArguments {
 	local isFirstArgument=true
 
-	if [ $# -eq 0 ]
-	then
+	if [ $# -eq 0 ]; then
 		Usage
 	fi
 
 	for i in "${@}"; do
 		case "$i" in
-			--dry)
+		--dry)
 			_DRYRUN=true
 			opts=$opts" --dry"
 			;;
-			--silent)
+		--silent)
 			_LOGGER_SILENT=true
 			opts=$opts" --silent"
 			;;
-			--verbose)
+		--verbose)
 			_LOGGER_VERBOSE=true
 			opts=$opts" --verbose"
 			;;
-			--stats)
+		--stats)
 			STATS=true
 			opts=$opts" --stats"
 			;;
-			--partial)
+		--partial)
 			PARTIAL=true
 			opts=$opts" --partial"
 			;;
-			--force-unlock)
+		--force-unlock)
 			FORCE_UNLOCK=true
 			opts=$opts" --force-unlock"
 			;;
-			--no-maxtime)
+		--no-maxtime)
 			no_maxtime=true
 			opts=$opts" --no-maxtime"
 			;;
-			--help|-h|--version|-v)
+		--help | -h | --version | -v)
 			Usage
 			;;
-			--initiator=*)
+		--initiator=*)
 			_QUICK_SYNC=$((_QUICK_SYNC + 1))
 			INITIATOR_SYNC_DIR="${i##*=}"
 			opts=$opts" --initiator=\"$INITIATOR_SYNC_DIR\""
 			;;
-			--target=*)
+		--target=*)
 			_QUICK_SYNC=$((_QUICK_SYNC + 1))
 			TARGET_SYNC_DIR="${i##*=}"
 			opts=$opts" --target=\"$TARGET_SYNC_DIR\""
 			;;
-			--rsakey=*)
+		--rsakey=*)
 			SSH_RSA_PRIVATE_KEY="${i##*=}"
 			opts=$opts" --rsakey=\"$SSH_RSA_PRIVATE_KEY\""
 			;;
-			--password-file=*)
+		--password-file=*)
 			SSH_PASSWORD_FILE="${i##*=}"
 			opts=$opts" --password-file=\"$SSH_PASSWORD_FILE\""
 			;;
-			--ssh-controlmaster)
+		--ssh-controlmaster)
 			SSH_CONTROLMASTER=true
 			opts=$opts" --ssh-controlmaster"
 			;;
-			--instance-id=*)
+		--instance-id=*)
 			INSTANCE_ID="${i##*=}"
 			opts=$opts" --instance-id=\"$INSTANCE_ID\""
 			;;
-			--skip-deletion=*)
+		--skip-deletion=*)
 			opts=$opts" --skip-deletion=\"${i##*=}\""
 			SKIP_DELETION="${i##*=}"
 			;;
-			--sync-type=*)
+		--sync-type=*)
 			opts=$opts" --sync-type=\"${i##*=}\""
 			SYNC_TYPE="${i##*=}"
 			;;
-			--on-changes)
+		--on-changes)
 			_SYNC_ON_CHANGES="initiator"
 			_NOLOCKS=true
 			_LOGGER_PREFIX="date"
 			;;
-			--on-changes-target)
+		--on-changes-target)
 			_SYNC_ON_CHANGES="target"
 			_NOLOCKS=true
 			_LOGGER_PREFIX="date"
 			;;
-			--no-resume)
+		--no-resume)
 			opts=$opts" --no-resume"
 			RESUME_TRY=0
 			;;
-			--no-locks)
+		--no-locks)
 			_NOLOCKS=true
 			;;
-			--errors-only)
+		--errors-only)
 			opts=$opts" --errors-only"
 			_LOGGER_ERR_ONLY=true
 			;;
-			--summary)
+		--non-interactive)
+			opts=$opts" --non-interactive"
+			_OFUNCTIONS_SHOW_SPINNER=false
+			;;
+		--summary)
 			opts=$opts" --summary"
 			_SUMMARY=true
 			;;
-			--log-conflicts)
+		--log-conflicts)
 			LOG_CONFLICTS=true
 			opts=$opts" --log-conflicts"
 			;;
-			--alert-conflicts)
+		--alert-conflicts)
 			ALERT_CONFLICTS=true
 			LOG_CONFLICTS=true
 			opts=$opts" --alert-conflicts"
 			;;
-			--initialize)
+		--initialize)
 			INITIALIZE=true
 			opts=$opts" --initialize"
 			;;
-			--no-prefix)
+		--no-prefix)
 			opts=$opts" --no-prefix"
 			_LOGGER_PREFIX=""
 			;;
-			--destination-mails=*)
+		--destination-mails=*)
 			DESTINATION_MAILS="${i##*=}"
 			;;
-			--initiator-state-dir=*)
+		--initiator-state-dir=*)
 			INITIATOR_CUSTOM_STATE_DIR="${i##*=}"
 			;;
-			--target-state-dir=*)
+		--target-state-dir=*)
 			TARGET_CUSTOM_STATE_DIR="${i##*=}"
 			;;
-			--remote-token=*)
+		--remote-token=*)
 			_REMOTE_TOKEN="${i##*=}"
 			;;
-			*)
+		*)
 			if [ $isFirstArgument == false ]; then
 				Logger "Unknown option '$i'" "CRITICAL"
 				Usage
@@ -6753,7 +6713,7 @@ fi
 
 if [ "$IS_STABLE" != true ]; then
 	Logger "This is an unstable dev build [$PROGRAM_BUILD]. Please use with caution." "WARN"
-	fi
+fi
 
 # v2 config syntax compatibility
 UpdateBooleans

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 source "$(dirname "$0")/ft-util/ft_util_inc_var"
+source "$(dirname "$0")/ft-util/ft_util_inc_func"
+source "$(dirname "$0")/ft-util/ft_util_sudoersd"
+source "$(dirname "$0")/ft-util/ft_util_usrmgmt"
 
 app_name="futur-tech-osync-sysvol"
 app_user="ft-osync-sysvol"
@@ -8,10 +11,7 @@ app_user="ft-osync-sysvol"
 required_pkg_arr=("rsync" "at")
 
 bin_dir="/usr/local/bin/${app_name}"
-src_dir="/usr/local/src/${app_name}"
 etc_f="/usr/local/etc/${app_name}.conf"
-log_f="/var/log/${app_name}.log"
-sudoers_etc="/etc/sudoers.d/${app_name}"
 
 $S_LOG -d $S_NAME "Start $S_DIR_NAME/$S_NAME $*"
 
@@ -123,35 +123,26 @@ echo "
     SETUP SUDOER FILES
 ------------------------------------------"
 
-$S_LOG -d $S_NAME -d "$sudoers_etc" "==============================="
-
-echo "Defaults:${app_user} !requiretty" | sudo EDITOR='tee' visudo --file=$sudoers_etc &>/dev/null
-
+bak_if_exist "/etc/sudoers.d/${app_name}"
+sudoersd_reset_file $app_name $app_user
 if [ ! "$is_dc_master" = true ]; then
-    echo "${app_user} ALL=NOPASSWD:SETENV:$(type -p rsync),$(type -p bash)" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
-    echo "${app_user} ALL=NOPASSWD:SETENV:/usr/bin/samba-tool ntacl sysvolreset" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
+    sudoersd_addto_file $app_name $app_user "$(type -p rsync),$(type -p bash)" ALL root "NOPASSWD:SETENV"
+    sudoersd_addto_file $app_name $app_user "/usr/bin/samba-tool ntacl sysvolreset" ALL root "NOPASSWD:SETENV"
 fi
-
 if [ -d "${zbx_conf_agent_d}" ]; then
     echo "Defaults:zabbix !requiretty" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
-    echo "zabbix ALL=(ALL) NOPASSWD:/usr/bin/samba-tool fsmo show" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
-    echo "zabbix ALL=(ALL) NOPASSWD:/usr/bin/samba-tool ntacl sysvolcheck" | sudo EDITOR='tee -a' visudo --file=$sudoers_etc &>/dev/null
+    sudoersd_addto_file $app_name zabbix "${S_DIR_PATH}/deploy-update.sh"
+    sudoersd_addto_file $app_name zabbix "/usr/bin/samba-tool fsmo show"
+    sudoersd_addto_file $app_name zabbix "/usr/bin/samba-tool ntacl sysvolcheck"
 fi
-
-cat $sudoers_etc | $S_LOG -d "$S_NAME" -d "$sudoers_etc" -i
-
-$S_LOG -d $S_NAME -d "$sudoers_etc" "==============================="
+show_bak_diff_rm "/etc/sudoers.d/${app_name}"
 
 echo "
     INSTALL BIN FILES
 ------------------------------------------"
 if [ "$is_dc_master" = true ]; then
-    if [ ! -d "${bin_dir}" ]; then
-        mkdir "${bin_dir}"
-        $S_LOG -s $? -d $S_NAME "Creating ${bin_dir} returned EXIT_CODE=$?"
-    fi
+    mkdir_if_missing ${bin_dir}
     $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/osync.sh" "${bin_dir}/osync.sh"
-
 else
     echo "Only on PDC Emulation Master"
 fi
@@ -160,9 +151,9 @@ echo "
     CONFIGURATION FILES
 ------------------------------------------"
 if [ "$is_dc_master" = true ]; then
-    $S_DIR/ft-util/ft_util_conf-update -s "$S_DIR/sync.conf.example" -d "${etc_f}"
 
-    conf_before=$(<${etc_f})
+    bak_if_exist ${etc_f}
+    $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/sync.conf.example" "${etc_f}" "NO-COMPARE"
 
     function custom_conf() {
         if grep "^${1}=" ${etc_f} &>/dev/null; then
@@ -205,11 +196,7 @@ if [ "$is_dc_master" = true ]; then
     custom_conf SMTP_USER "\"\""
     custom_conf SMTP_PASSWORD "\"\""
 
-    if echo -e "$conf_before" | diff --unified=0 --to-file=${etc_f} -; then
-        $S_LOG -s info -d $S_NAME "${etc_f} has not changed"
-    else
-        $S_LOG -s warn -d $S_NAME "${etc_f} has changed"
-    fi
+    show_bak_diff_rm ${etc_f}
 
 else
     echo "Only on PDC Emulation Master"
@@ -230,9 +217,8 @@ echo "
   SETUP LOG ROTATION
 ------------------------------------------"
 
-[ ! -e "${log_f}" ] && touch /var/log/${app_name}.log
-chmod 640 ${log_f}
-chown root:adm ${log_f}
+[ ! -e "/var/log/${app_name}.log" ] && touch /var/log/${app_name}.log
+enforce_security conf "/var/log/${app_name}.log" adm
 
 $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
 
@@ -242,13 +228,8 @@ if [ -d "${zbx_conf_agent_d}" ]; then
 ------------------------------------------"
 
     $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
-
-    echo "
-  RESTART ZABBIX LATER
-------------------------------------------"
-
     echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
     $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
 fi
 
-$S_LOG -d "$S_NAME" "End $S_NAME"
+exit

@@ -1,6 +1,6 @@
 zabbix_export:
   version: '6.0'
-  date: '2023-08-03T16:15:41Z'
+  date: '2023-08-19T09:31:54Z'
   groups:
     - uuid: 7f27dc73981940769811e7fae4a26772
       name: Templates/Futur-Tech/Applications
@@ -60,7 +60,7 @@ zabbix_export:
           type: ZABBIX_ACTIVE
           key: 'logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip]'
           trends: '0'
-          value_type: TEXT
+          value_type: LOG
           tags:
             - tag: Application
               value: Samba
