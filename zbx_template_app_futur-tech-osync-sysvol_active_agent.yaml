@@ -1,6 +1,6 @@
 zabbix_export:
   version: '6.0'
-  date: '2023-08-19T09:41:09Z'
+  date: '2023-11-22T20:35:37Z'
   groups:
     - uuid: 7f27dc73981940769811e7fae4a26772
       name: Templates/Futur-Tech/Applications
@@ -127,7 +127,7 @@ zabbix_export:
         and last(/futur-tech-osync-sysvol/ft-osync-sysvol.hasPdcEmulationMasterRole)=1
       name: 'No SysVol replication for more than {$OSYNC_SYSVOL.AGE.WARN}'
       opdata: 'Last osync: {ITEM.LASTVALUE}'
-      priority: HIGH
+      priority: AVERAGE
       description: 'Check /var/log/futur-tech-osync-sysvol.log'
     - uuid: 6d14b44c2bcc4585bfe49a832ff0c8e3
       expression: 'find(/futur-tech-osync-sysvol/logrt[/var/log/futur-tech-osync-sysvol.log,,,,skip],#1,"regexp","- \(WARN\):")=1'
