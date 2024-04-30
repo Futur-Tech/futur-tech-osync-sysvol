@@ -220,7 +220,7 @@ echo "
 [ ! -e "/var/log/${app_name}.log" ] && touch /var/log/${app_name}.log
 enforce_security conf "/var/log/${app_name}.log" adm
 
-$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}" "NO-BACKUP"
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.logrotate/${app_name}" "/etc/logrotate.d/${app_name}"
 
 if [ -d "${zbx_conf_agent_d}" ]; then
     echo "
