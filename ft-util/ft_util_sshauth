@@ -50,11 +50,12 @@ if [ -d "$ssh_dir" ]; then
     echo "# DO NOT MODIFY THIS FILE. Compile it with script ft_util_sshauth !!!" >${auth_keys_file}
     cat ${auth_keys_dir}/* >>${auth_keys_file}
 
-    chown -R ${USER_NAME}:${GROUP_NAME} ${user_home}/.ssh
-    chmod -R 600 ${user_home}/.ssh/
-    chmod 700 ${user_home}/.ssh
+    chown -R ${USER_NAME}:${GROUP_NAME} ${ssh_dir}
+    chmod -R 600 ${ssh_dir}
+    chmod 700 ${ssh_dir}
+    chmod 700 ${auth_keys_dir}
 
-    $S_LOG -s $? -d $S_NAME "Creation of authorized_keys in ${user_home}/.ssh/ EXIT_CODE=$?"
+    $S_LOG -s $? -d $S_NAME "Creation of authorized_keys in ${ssh_dir} EXIT_CODE=$?"
 
 else
     $S_LOG -s crit -d $S_NAME "Sorry \"${ssh_dir}\" doesn't exist. Please generate SSH Keys."
